@@ -3,14 +3,13 @@ from __future__ import annotations
 import csv
 import gzip
 import hashlib
-import io
 import json
 import os
 import re
 import time
 from dataclasses import dataclass
 from datetime import datetime, date, timedelta
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional
 
 import pandas as pd
 import requests
@@ -41,14 +40,6 @@ def today_in_tz(tz_name: str) -> date:
     return datetime.now(tz=z).date()
 
 
-def parse_di_df(s: str) -> date:
-    return datetime.strptime(s, "%d_%m_%Y").date()
-
-
-def format_di_df(d: date) -> str:
-    return d.strftime("%d_%m_%Y")
-
-
 def date_range_inclusive(d0: date, d1: date) -> Iterable[date]:
     if d1 < d0:
         raise ValueError("end date precedes start date")
@@ -67,8 +58,7 @@ def http_get_with_retry(url: str, timeout: int, max_retries: int, backoff_factor
             return r
         except Exception as e:
             last_exc = e
-            sleep_s = backoff_factor * (2 ** attempt)
-            time.sleep(sleep_s)
+            time.sleep(backoff_factor * (2 ** attempt))
     raise RuntimeError(f"http request failed after retries: {url}") from last_exc
 
 
@@ -111,14 +101,6 @@ def write_json(path: str, obj: Dict[str, Any]) -> None:
         json.dump(obj, f, ensure_ascii=False, indent=2)
 
 
-def normalize_station_name(x: Any) -> str:
-    if x is None:
-        return ""
-    s = str(x).strip().upper()
-    s = re.sub(r"\s+", " ", s)
-    return s
-
-
 def safe_int(x: Any) -> Optional[int]:
     if x is None:
         return None
@@ -141,6 +123,14 @@ def parse_dt_it(x: Any) -> Optional[pd.Timestamp]:
         return pd.to_datetime(s, dayfirst=True, errors="raise")
     except Exception:
         return None
+
+
+def normalize_station_name(x: Any) -> str:
+    if x is None:
+        return ""
+    s = str(x).strip().upper()
+    s = re.sub(r"\s+", " ", s)
+    return s
 
 
 def compute_unique_key(row: pd.Series) -> str:
@@ -201,8 +191,3 @@ def bucketize_delay(minutes: Optional[int], edges: List[int], labels: List[str])
         return "missing"
     for i in range(len(edges) - 1):
         lo = edges[i]
-        hi = edges[i + 1]
-        if minutes > lo and minutes <= hi:
-            return labels[i]
-    return "missing"
-
