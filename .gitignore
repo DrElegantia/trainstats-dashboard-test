@@ -4,15 +4,18 @@ __pycache__/
 .vscode/
 .DS_Store
 
-data/bronze/**/*.csv
-data/bronze/**/*.csv.gz
-data/bronze/**/*.json
-
 data/silver/**/*.parquet
 data/gold/**/*.parquet
 
-site/data/*.csv
-site/data/*.json
-site/data/*.parquet
+# bronze: vogliamo tracciare i raw compressi + meta
+# se vuoi ignorare i csv non compressi, lascia solo la riga .csv
+data/bronze/**/*.csv
+
+# non ignorare questi
+!data/bronze/**/*.csv.gz
+!data/bronze/**/*.json
+
+# pages: ora pubblichi da docs, quindi non serve più ignorare site/data
+site/
 
 !.gitkeep
