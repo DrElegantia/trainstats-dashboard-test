@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import os
-from datetime import date
 from typing import Any, Dict, Optional, List
 
-import duckdb
 import pandas as pd
 
 from .utils import bucketize_delay, ensure_dir, load_yaml
@@ -38,20 +36,40 @@ def build_metrics(cfg: Dict[str, Any], df: pd.DataFrame) -> pd.DataFrame:
 
     df = df.copy()
 
-    df["categoria"] = df["Categoria"].astype(str).str.strip()
-    df["num_treno"] = df["Numero treno"].astype(str).str.strip()
+    required_cols = [
+        "unique_key",
+        "categoria",
+        "numero_treno",
+        "cod_partenza",
+        "cod_arrivo",
+        "nome_partenza",
+        "nome_arrivo",
+        "dt_partenza_prog",
+        "dt_arrivo_prog",
+        "ritardo_partenza_min",
+        "ritardo_arrivo_min",
+        "stato_corsa",
+        "info_mancante",
+    ]
+    missing = [c for c in required_cols if c not in df.columns]
+    if missing:
+        raise KeyError(f"silver schema mismatch. missing={missing}. available={list(df.columns)}")
 
-    df["cod_partenza"] = df["Codice stazione partenza"].astype(str).str.strip()
-    df["cod_arrivo"] = df["Codice stazione arrivo"].astype(str).str.strip()
-    df["nome_partenza"] = df["stazione_partenza_nome_norm"].astype(str)
-    df["nome_arrivo"] = df["stazione_arrivo_nome_norm"].astype(str)
+    df["categoria"] = df["categoria"].astype(str).str.strip()
+    df["num_treno"] = df["numero_treno"].astype(str).str.strip()
 
-    df["partenza_prog_dt"] = pd.to_datetime(df["partenza_prog_dt"], errors="coerce")
-    df["arrivo_prog_dt"] = pd.to_datetime(df["arrivo_prog_dt"], errors="coerce")
+    df["cod_partenza"] = df["cod_partenza"].astype(str).str.strip()
+    df["cod_arrivo"] = df["cod_arrivo"].astype(str).str.strip()
 
-    df["giorno"] = to_day_key(df["partenza_prog_dt"])
-    df["mese"] = to_month_key(df["partenza_prog_dt"])
-    df["anno"] = df["partenza_prog_dt"].dt.year.astype("Int64")
+    df["nome_partenza"] = df["nome_partenza"].astype(str)
+    df["nome_arrivo"] = df["nome_arrivo"].astype(str)
+
+    df["dt_partenza_prog"] = pd.to_datetime(df["dt_partenza_prog"], errors="coerce")
+    df["dt_arrivo_prog"] = pd.to_datetime(df["dt_arrivo_prog"], errors="coerce")
+
+    df["giorno"] = to_day_key(df["dt_partenza_prog"])
+    df["mese"] = to_month_key(df["dt_partenza_prog"])
+    df["anno"] = df["dt_partenza_prog"].dt.year.astype("Int64")
 
     df["ritardo_partenza_min"] = pd.to_numeric(df["ritardo_partenza_min"], errors="coerce")
     df["ritardo_arrivo_min"] = pd.to_numeric(df["ritardo_arrivo_min"], errors="coerce")
@@ -75,7 +93,16 @@ def build_metrics(cfg: Dict[str, Any], df: pd.DataFrame) -> pd.DataFrame:
 
     edges = cfg["delay_buckets_minutes"]["edges"]
     labels = cfg["delay_buckets_minutes"]["labels"]
-    df["bucket_ritardo_arrivo"] = df["ritardo_arrivo_min"].apply(lambda x: bucketize_delay(None if pd.isna(x) else int(x), edges, labels))
+
+    def buck(x):
+        if pd.isna(x):
+            return "missing"
+        try:
+            return bucketize_delay(int(x), edges, labels)
+        except Exception:
+            return "missing"
+
+    df["bucket_ritardo_arrivo"] = df["ritardo_arrivo_min"].apply(buck)
 
     return df
 
@@ -97,10 +124,10 @@ def agg_core(group_cols: List[str], df: pd.DataFrame) -> pd.DataFrame:
 
     out = g.agg(
         corse_osservate=("unique_key", "count"),
-        effettuate=("stato_corsa", lambda s: int((s == "effettuato").sum())),
-        cancellate=("stato_corsa", lambda s: int((s == "cancellato").sum())),
-        soppresse=("stato_corsa", lambda s: int((s == "soppresso").sum())),
-        parzialmente_cancellate=("stato_corsa", lambda s: int((s == "parzialmente_cancellato").sum())),
+        effettuate=("stato_corsa", lambda s: int((pd.Series(s) == "effettuato").sum())),
+        cancellate=("stato_corsa", lambda s: int((pd.Series(s) == "cancellato").sum())),
+        soppresse=("stato_corsa", lambda s: int((pd.Series(s) == "soppresso").sum())),
+        parzialmente_cancellate=("stato_corsa", lambda s: int((pd.Series(s) == "parzialmente_cancellato").sum())),
         info_mancante=("info_mancante", lambda s: int(pd.Series(s).fillna(False).sum())),
         in_orario=("arrivo_in_orario", lambda s: int(pd.Series(s).fillna(False).sum())),
         in_ritardo=("arrivo_in_ritardo", lambda s: int(pd.Series(s).fillna(False).sum())),
@@ -138,17 +165,23 @@ def build_gold(cfg: Dict[str, Any], df: pd.DataFrame) -> Dict[str, pd.DataFrame]
     out["hist_mese_categoria"] = h
 
     od = agg_core(["mese", "categoria", "cod_partenza", "cod_arrivo"], df)
-    od["nome_partenza"] = df.groupby(["cod_partenza"])["nome_partenza"].first().reindex(od["cod_partenza"]).values
-    od["nome_arrivo"] = df.groupby(["cod_arrivo"])["nome_arrivo"].first().reindex(od["cod_arrivo"]).values
+
+    part_names = df.dropna(subset=["cod_partenza"]).drop_duplicates("cod_partenza").set_index("cod_partenza")["nome_partenza"]
+    arr_names = df.dropna(subset=["cod_arrivo"]).drop_duplicates("cod_arrivo").set_index("cod_arrivo")["nome_arrivo"]
+
+    od["nome_partenza"] = od["cod_partenza"].map(part_names).fillna("")
+    od["nome_arrivo"] = od["cod_arrivo"].map(arr_names).fillna("")
     out["od_mese_categoria"] = od
 
-    dep = agg_core(["mese", "categoria", "cod_partenza"], df.rename(columns={"cod_partenza": "cod_stazione"}))
+    dep_src = df.rename(columns={"cod_partenza": "cod_stazione"})
+    dep = agg_core(["mese", "categoria", "cod_stazione"], dep_src)
     dep["ruolo"] = "partenza"
-    dep["nome_stazione"] = df.groupby(["cod_partenza"])["nome_partenza"].first().reindex(dep["cod_stazione"]).values
+    dep["nome_stazione"] = dep["cod_stazione"].map(part_names).fillna("")
 
-    arr = agg_core(["mese", "categoria", "cod_arrivo"], df.rename(columns={"cod_arrivo": "cod_stazione"}))
+    arr_src = df.rename(columns={"cod_arrivo": "cod_stazione"})
+    arr = agg_core(["mese", "categoria", "cod_stazione"], arr_src)
     arr["ruolo"] = "arrivo"
-    arr["nome_stazione"] = df.groupby(["cod_arrivo"])["nome_arrivo"].first().reindex(arr["cod_stazione"]).values
+    arr["nome_stazione"] = arr["cod_stazione"].map(arr_names).fillna("")
 
     combined = pd.concat([dep, arr], ignore_index=True)
     out["stazioni_mese_categoria_ruolo"] = combined
@@ -172,8 +205,12 @@ def build_gold(cfg: Dict[str, Any], df: pd.DataFrame) -> Dict[str, pd.DataFrame]
         minuti_anticipo_tot=("minuti_anticipo_tot", "sum"),
         minuti_netti_tot=("minuti_netti_tot", "sum"),
     ).reset_index()
+
     comb2["ruolo"] = "nodo"
-    comb2["nome_stazione"] = combined.groupby(["cod_stazione"])["nome_stazione"].first().reindex(comb2["cod_stazione"]).values
+
+    name_any = combined.dropna(subset=["cod_stazione"]).drop_duplicates("cod_stazione").set_index("cod_stazione")["nome_stazione"]
+    comb2["nome_stazione"] = comb2["cod_stazione"].map(name_any).fillna("")
+
     out["stazioni_mese_categoria_nodo"] = comb2
 
     return out
@@ -195,6 +232,7 @@ def main() -> None:
         return
 
     df = pd.concat([pd.read_parquet(p) for p in silver_files], ignore_index=True)
+
     dfm = build_metrics(cfg, df)
     tables = build_gold(cfg, dfm)
     save_gold_tables(tables)
@@ -204,4 +242,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
