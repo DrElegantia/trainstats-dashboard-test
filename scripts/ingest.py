@@ -7,7 +7,6 @@ from typing import Any, Dict, Optional
 from .utils import (
     date_range_inclusive,
     ensure_dir,
-    format_di_df,
     http_get_with_retry,
     load_json,
     load_yaml,
@@ -16,6 +15,10 @@ from .utils import (
     write_gzip_bytes,
     write_json,
 )
+
+
+def format_di_df(d: date) -> str:
+    return d.strftime("%d_%m_%Y")
 
 
 def build_url(cfg: Dict[str, Any], d: date) -> str:
