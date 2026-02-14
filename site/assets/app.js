@@ -1,17 +1,35 @@
 async function fetchText(path) {
   const r = await fetch(path, { cache: "no-store" });
-  if (!r.ok) throw new Error("Failed fetch " + path);
+  if (!r.ok) throw new Error("Failed fetch " + path + " (" + r.status + ")");
   return await r.text();
 }
 
 async function fetchJson(path) {
   const r = await fetch(path, { cache: "no-store" });
-  if (!r.ok) throw new Error("Failed fetch " + path);
+  if (!r.ok) throw new Error("Failed fetch " + path + " (" + r.status + ")");
   return await r.json();
 }
 
+async function fetchTextOrNull(path) {
+  try {
+    return await fetchText(path);
+  } catch {
+    return null;
+  }
+}
+
+async function fetchJsonOrNull(path) {
+  try {
+    return await fetchJson(path);
+  } catch {
+    return null;
+  }
+}
+
 function parseCSV(text) {
-  const lines = text.trim().split(/\r?\n/);
+  const t = String(text || "").trim();
+  if (!t) return [];
+  const lines = t.split(/\r?\n/);
   if (lines.length <= 1) return [];
   const header = lines[0].split(",");
   const rows = [];
@@ -65,10 +83,6 @@ function yearFromMonth(mese) {
   return String(mese).slice(0, 4);
 }
 
-function monthFromDay(giorno) {
-  return String(giorno).slice(0, 7);
-}
-
 function stationName(code, fallback) {
   const c = String(code || "").trim();
   const ref = state.stationsRef.get(c);
@@ -90,7 +104,6 @@ function stationCoords(code) {
 
 const state = {
   manifest: null,
-  cfg: null,
   kpiDay: [],
   kpiDayCat: [],
   kpiMonth: [],
@@ -113,15 +126,58 @@ const state = {
   }
 };
 
+function setMeta(text) {
+  const el = document.getElementById("metaBox");
+  if (el) el.innerText = text;
+}
+
+function safeManifestDefaults() {
+  return {
+    built_at_utc: "",
+    gold_files: [
+      "hist_mese_categoria.csv",
+      "kpi_giorno.csv",
+      "kpi_giorno_categoria.csv",
+      "kpi_mese.csv",
+      "kpi_mese_categoria.csv",
+      "od_mese_categoria.csv",
+      "stazioni_mese_categoria_nodo.csv"
+    ],
+    punctuality: { on_time_threshold_minutes: 5 },
+    delay_buckets_minutes: { labels: [] },
+    min_counts: { leaderboard_min_trains: 20 }
+  };
+}
+
 async function loadAll() {
-  state.manifest = await fetchJson("data/manifest.json");
-  document.getElementById("metaBox").innerText = "Build: " + state.manifest.built_at_utc;
+  setMeta("Caricamento dati...");
 
-  const files = state.manifest.gold_files;
+  const man = await fetchJsonOrNull("data/manifest.json");
+  state.manifest = man || safeManifestDefaults();
 
-  const texts = await Promise.all(files.map(f => fetchText("data/" + f)));
+  if (state.manifest && state.manifest.built_at_utc) {
+    setMeta("Build: " + state.manifest.built_at_utc);
+  } else {
+    setMeta("Build: manifest non trovato, carico i CSV disponibili");
+  }
+
+  const files = Array.isArray(state.manifest.gold_files) && state.manifest.gold_files.length
+    ? state.manifest.gold_files
+    : safeManifestDefaults().gold_files;
+
+  const texts = await Promise.all(files.map(f => fetchTextOrNull("data/" + f)));
   const parsed = {};
-  for (let i = 0; i < files.length; i++) parsed[files[i]] = parseCSV(texts[i]);
+  let foundAnyGold = false;
+
+  for (let i = 0; i < files.length; i++) {
+    const txt = texts[i];
+    if (txt) {
+      parsed[files[i]] = parseCSV(txt);
+      foundAnyGold = true;
+    } else {
+      parsed[files[i]] = [];
+    }
+  }
 
   state.kpiDayCat = parsed["kpi_giorno_categoria.csv"] || [];
   state.kpiMonthCat = parsed["kpi_mese_categoria.csv"] || [];
@@ -131,7 +187,7 @@ async function loadAll() {
   state.stationsMonthNode = parsed["stazioni_mese_categoria_nodo.csv"] || [];
   state.odMonthCat = parsed["od_mese_categoria.csv"] || [];
 
-  const stTxt = await fetchText("data/stations_dim.csv").catch(() => "");
+  const stTxt = await fetchTextOrNull("data/stations_dim.csv");
   const stRows = stTxt ? parseCSV(stTxt) : [];
 
   state.stationsRef.clear();
@@ -143,18 +199,17 @@ async function loadAll() {
     const lat = Number(r.lat);
     const lon = Number(r.lon);
 
-    state.stationsRef.set(code, {
-      code,
-      name,
-      lat,
-      lon
-    });
+    state.stationsRef.set(code, { code, name, lat, lon });
   });
 
   initFilters();
   initMap();
   initTables();
   renderAll();
+
+  if (!foundAnyGold) {
+    setMeta("Errore: non trovo i CSV in site/data. Controlla il deploy di GitHub Pages e che pubblichi la cartella site completa.");
+  }
 }
 
 function initFilters() {
@@ -208,8 +263,9 @@ function initFilters() {
     renderAll();
   };
 
-  const thr = state.manifest.punctuality.on_time_threshold_minutes;
-  document.getElementById("noteThreshold").innerText = "In orario significa ritardo arrivo tra 0 e " + thr + " minuti. Anticipo è ritardo negativo.";
+  const thr = state.manifest && state.manifest.punctuality ? state.manifest.punctuality.on_time_threshold_minutes : 5;
+  document.getElementById("noteThreshold").innerText =
+    "In orario significa ritardo arrivo tra 0 e " + thr + " minuti. Anticipo è ritardo negativo.";
 }
 
 function passYear(row, keyField) {
@@ -280,11 +336,7 @@ function renderSeries() {
   let daily = state.kpiDayCat;
   if (state.filters.year !== "all") daily = daily.filter(r => passYear(r, "giorno"));
   if (state.filters.cat !== "all") daily = daily.filter(passCat);
-
-  if (state.filters.dep !== "all" || state.filters.arr !== "all") {
-    daily = [];
-  }
-
+  if (state.filters.dep !== "all" || state.filters.arr !== "all") daily = [];
   daily = daily.sort((a,b) => String(a.giorno).localeCompare(String(b.giorno)));
 
   const x = daily.map(r => r.giorno);
@@ -349,12 +401,22 @@ function renderHist() {
   let rows = state.histMonthCat;
   if (state.filters.year !== "all") rows = rows.filter(r => passYear(r, "mese"));
   if (state.filters.cat !== "all") rows = rows.filter(passCat);
+  if (state.filters.dep !== "all" || state.filters.arr !== "all") rows = [];
 
-  if (state.filters.dep !== "all" || state.filters.arr !== "all") {
-    rows = [];
+  const labels = state.manifest && state.manifest.delay_buckets_minutes && Array.isArray(state.manifest.delay_buckets_minutes.labels)
+    ? state.manifest.delay_buckets_minutes.labels
+    : [];
+
+  if (!labels.length) {
+    Plotly.newPlot("chartHist", [{ x: [], y: [], type: "bar" }], {
+      margin: { t: 10, l: 40, r: 20, b: 60 },
+      paper_bgcolor: "rgba(0,0,0,0)",
+      plot_bgcolor: "rgba(0,0,0,0)",
+      font: { color: "#e6e9f2" }
+    }, { displayModeBar: false });
+    return;
   }
 
-  const labels = state.manifest.delay_buckets_minutes.labels;
   const byBucket = new Map();
   labels.forEach(l => byBucket.set(l, 0));
 
@@ -367,9 +429,7 @@ function renderHist() {
   const x = labels;
   const y = labels.map(l => byBucket.get(l) || 0);
 
-  Plotly.newPlot("chartHist", [
-    { x, y, name: "Conteggio", type: "bar" }
-  ], {
+  Plotly.newPlot("chartHist", [{ x, y, name: "Conteggio", type: "bar" }], {
     margin: { t: 10, l: 40, r: 20, b: 90 },
     paper_bgcolor: "rgba(0,0,0,0)",
     plot_bgcolor: "rgba(0,0,0,0)",
@@ -420,15 +480,12 @@ function initTables() {
 }
 
 function renderTables() {
-  const minN = toNum(state.manifest.min_counts.leaderboard_min_trains);
+  const minN = state.manifest && state.manifest.min_counts ? toNum(state.manifest.min_counts.leaderboard_min_trains) : 20;
 
   let st = state.stationsMonthNode;
   if (state.filters.year !== "all") st = st.filter(r => passYear(r, "mese"));
   if (state.filters.cat !== "all") st = st.filter(passCat);
-
-  if (state.filters.dep !== "all" || state.filters.arr !== "all") {
-    st = [];
-  }
+  if (state.filters.dep !== "all" || state.filters.arr !== "all") st = [];
 
   st = st.map(r => {
     const n = toNum(r.corse_osservate);
@@ -473,15 +530,12 @@ function clearMarkers() {
 function renderMap() {
   clearMarkers();
   const metric = document.getElementById("mapMetricSel").value;
-  const minN = toNum(state.manifest.min_counts.leaderboard_min_trains);
+  const minN = state.manifest && state.manifest.min_counts ? toNum(state.manifest.min_counts.leaderboard_min_trains) : 20;
 
   let st = state.stationsMonthNode;
   if (state.filters.year !== "all") st = st.filter(r => passYear(r, "mese"));
   if (state.filters.cat !== "all") st = st.filter(passCat);
-
-  if (state.filters.dep !== "all" || state.filters.arr !== "all") {
-    st = [];
-  }
+  if (state.filters.dep !== "all" || state.filters.arr !== "all") st = [];
 
   let missingCoords = 0;
 
@@ -489,7 +543,7 @@ function renderMap() {
     const n = toNum(r.corse_osservate);
     if (n < minN) return;
 
-    const code = String(r.cod_stazione).trim();
+    const code = String(r.cod_stazione || "").trim();
     const coords = stationCoords(code);
     if (!coords) {
       missingCoords++;
@@ -529,7 +583,7 @@ function renderMap() {
   });
 
   const note = missingCoords > 0
-    ? "Alcune stazioni non hanno coordinate e non sono disegnate sulla mappa. Completa stations/stations.csv oppure guarda stations/stations_unknown.csv."
+    ? "Alcune stazioni non hanno coordinate e non sono disegnate sulla mappa. Completa data/stations/stations.csv oppure guarda data/stations/stations_unknown.csv."
     : "Coordinate stazioni complete per il set filtrato.";
   document.getElementById("mapNote").innerText = note;
 }
@@ -544,5 +598,5 @@ function renderAll() {
 
 loadAll().catch(err => {
   console.error(err);
-  document.getElementById("metaBox").innerText = "Errore caricamento dati";
+  setMeta("Errore caricamento dati: " + (err && err.message ? err.message : String(err)));
 });
