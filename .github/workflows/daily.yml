@@ -61,6 +61,22 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Debug python files
+        run: |
+          echo "PWD:"
+          pwd
+          echo
+          echo "Tree scripts:"
+          ls -la scripts || true
+          echo
+          echo "First 120 lines of scripts/utils.py:"
+          sed -n '1,120p' scripts/utils.py || true
+          echo
+          echo "Search for format_di_df:"
+          grep -n "def format_di_df" -n scripts/utils.py || true
+          echo
+          echo "Python import check:"
+          python -c "import scripts.utils as u; print('utils file:', u.__file__); print('has format_di_df:', hasattr(u, 'format_di_df'))"
 
       - name: Run pipeline
         env:
