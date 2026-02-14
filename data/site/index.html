@@ -1,1 +1,118 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>TrainStats Dashboard</title>
+  <link rel="stylesheet" href="https://unpkg.com/tabulator-tables@6.3.0/dist/css/tabulator.min.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="title">
+      <h1>TrainStats Dashboard</h1>
+      <div class="subtitle">Dashboard statica su GitHub Pages, aggiornata giornalmente</div>
+    </div>
+    <div class="meta" id="metaBox"></div>
+  </header>
+
+  <section class="panel filters">
+    <div class="filter">
+      <label for="yearSel">Anno</label>
+      <select id="yearSel"></select>
+    </div>
+    <div class="filter">
+      <label for="catSel">Categoria</label>
+      <select id="catSel"></select>
+    </div>
+    <div class="filter">
+      <label for="depSel">Stazione partenza</label>
+      <select id="depSel"></select>
+    </div>
+    <div class="filter">
+      <label for="arrSel">Stazione arrivo</label>
+      <select id="arrSel"></select>
+    </div>
+    <div class="filter">
+      <label for="mapMetricSel">Mappa</label>
+      <select id="mapMetricSel">
+        <option value="pct_ritardo">Percentuale in ritardo</option>
+        <option value="in_ritardo">Conteggio in ritardo</option>
+        <option value="minuti_ritardo_tot">Minuti totali ritardo</option>
+        <option value="cancellate">Cancellati</option>
+        <option value="soppresse">Soppressi</option>
+      </select>
+    </div>
+    <div class="filter">
+      <button id="resetBtn">Reset</button>
+    </div>
+  </section>
+
+  <section class="panel kpis">
+    <div class="kpi">
+      <div class="kpiLabel">Corse osservate</div>
+      <div class="kpiValue" id="kpiTotal"></div>
+    </div>
+    <div class="kpi">
+      <div class="kpiLabel">In ritardo</div>
+      <div class="kpiValue" id="kpiLate"></div>
+    </div>
+    <div class="kpi">
+      <div class="kpiLabel">Minuti totali di ritardo</div>
+      <div class="kpiValue" id="kpiLateMin"></div>
+    </div>
+    <div class="kpi">
+      <div class="kpiLabel">Cancellati</div>
+      <div class="kpiValue" id="kpiCancelled"></div>
+    </div>
+    <div class="kpi">
+      <div class="kpiLabel">Soppressi</div>
+      <div class="kpiValue" id="kpiSuppressed"></div>
+    </div>
+  </section>
+
+  <section class="panel grid2">
+    <div class="card">
+      <h2>Serie giornaliera</h2>
+      <div class="note" id="noteThreshold"></div>
+      <div id="chartDaily" class="chart"></div>
+    </div>
+    <div class="card">
+      <h2>Serie mensile</h2>
+      <div id="chartMonthly" class="chart"></div>
+    </div>
+  </section>
+
+  <section class="panel grid2">
+    <div class="card">
+      <h2>Distribuzione ritardo arrivo</h2>
+      <div id="chartHist" class="chart"></div>
+    </div>
+    <div class="card">
+      <h2>Mappa stazioni</h2>
+      <div id="map" class="map"></div>
+      <div class="note" id="mapNote"></div>
+    </div>
+  </section>
+
+  <section class="panel grid2">
+    <div class="card">
+      <h2>Stazioni più problematiche</h2>
+      <div class="note">Tabella filtrata e ordinabile. Soglia minima applicata per evitare rumore su pochi treni.</div>
+      <div id="tableStations"></div>
+    </div>
+    <div class="card">
+      <h2>Relazioni partenza arrivo</h2>
+      <div class="note">Mostra percentuale e minuti, utile per capire se il problema è frequente o solo “costoso”.</div>
+      <div id="tableOD"></div>
+    </div>
+  </section>
+
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <script src="https://unpkg.com/tabulator-tables@6.3.0/dist/js/tabulator.min.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="assets/app.js"></script>
+</body>
+</html>
 
