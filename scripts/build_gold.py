@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, List
 
 import pandas as pd
 
@@ -31,9 +31,17 @@ def to_day_key(ts: pd.Series) -> pd.Series:
     return ts.dt.date.astype(str)
 
 
-def build_metrics(cfg: Dict[str, Any], df: pd.DataFrame) -> pd.DataFrame:
-    thr = int(cfg["punctuality"]["on_time_threshold_minutes"])
+def _get_on_time_threshold(cfg: Dict[str, Any]) -> int:
+    p = cfg.get("punctuality", {})
+    if "on_time_threshold_minutes" in p:
+        return int(p["on_time_threshold_minutes"])
+    if "on_time_max_delay_minutes" in p:
+        return int(p["on_time_max_delay_minutes"])
+    return 4
 
+
+def build_metrics(cfg: Dict[str, Any], df: pd.DataFrame) -> pd.DataFrame:
+    thr = _get_on_time_threshold(cfg)
     df = df.copy()
 
     required_cols = [
@@ -81,11 +89,11 @@ def build_metrics(cfg: Dict[str, Any], df: pd.DataFrame) -> pd.DataFrame:
     df["arrivo_in_ritardo"] = df["has_delay_arrivo"] & (df["ritardo_arrivo_min"] > thr)
     df["arrivo_in_anticipo"] = df["has_delay_arrivo"] & (df["ritardo_arrivo_min"] < 0)
 
-    df["oltre_5"] = df["has_delay_arrivo"] & (df["ritardo_arrivo_min"] > 5)
-    df["oltre_10"] = df["has_delay_arrivo"] & (df["ritardo_arrivo_min"] > 10)
-    df["oltre_15"] = df["has_delay_arrivo"] & (df["ritardo_arrivo_min"] > 15)
-    df["oltre_30"] = df["has_delay_arrivo"] & (df["ritardo_arrivo_min"] > 30)
-    df["oltre_60"] = df["has_delay_arrivo"] & (df["ritardo_arrivo_min"] > 60)
+    df["oltre_5"] = df["has_delay_arrivo"] & (df["ritardo_arrivo_min"] >= 5)
+    df["oltre_10"] = df["has_delay_arrivo"] & (df["ritardo_arrivo_min"] >= 10)
+    df["oltre_15"] = df["has_delay_arrivo"] & (df["ritardo_arrivo_min"] >= 15)
+    df["oltre_30"] = df["has_delay_arrivo"] & (df["ritardo_arrivo_min"] >= 30)
+    df["oltre_60"] = df["has_delay_arrivo"] & (df["ritardo_arrivo_min"] >= 60)
 
     df["minuti_ritardo"] = df["ritardo_arrivo_min"].clip(lower=0)
     df["minuti_anticipo"] = (-df["ritardo_arrivo_min"]).clip(lower=0)
@@ -128,15 +136,15 @@ def agg_core(group_cols: List[str], df: pd.DataFrame) -> pd.DataFrame:
         cancellate=("stato_corsa", lambda s: int((pd.Series(s) == "cancellato").sum())),
         soppresse=("stato_corsa", lambda s: int((pd.Series(s) == "soppresso").sum())),
         parzialmente_cancellate=("stato_corsa", lambda s: int((pd.Series(s) == "parzialmente_cancellato").sum())),
-        info_mancante=("info_mancante", lambda s: int(pd.Series(s).fillna(False).sum())),
-        in_orario=("arrivo_in_orario", lambda s: int(pd.Series(s).fillna(False).sum())),
-        in_ritardo=("arrivo_in_ritardo", lambda s: int(pd.Series(s).fillna(False).sum())),
-        in_anticipo=("arrivo_in_anticipo", lambda s: int(pd.Series(s).fillna(False).sum())),
-        oltre_5=("oltre_5", lambda s: int(pd.Series(s).fillna(False).sum())),
-        oltre_10=("oltre_10", lambda s: int(pd.Series(s).fillna(False).sum())),
-        oltre_15=("oltre_15", lambda s: int(pd.Series(s).fillna(False).sum())),
-        oltre_30=("oltre_30", lambda s: int(pd.Series(s).fillna(False).sum())),
-        oltre_60=("oltre_60", lambda s: int(pd.Series(s).fillna(False).sum())),
+        info_mancante=("info_mancante", lambda s: int(pd.Series(s).fillna(False).astype(bool).sum())),
+        in_orario=("arrivo_in_orario", lambda s: int(pd.Series(s).fillna(False).astype(bool).sum())),
+        in_ritardo=("arrivo_in_ritardo", lambda s: int(pd.Series(s).fillna(False).astype(bool).sum())),
+        in_anticipo=("arrivo_in_anticipo", lambda s: int(pd.Series(s).fillna(False).astype(bool).sum())),
+        oltre_5=("oltre_5", lambda s: int(pd.Series(s).fillna(False).astype(bool).sum())),
+        oltre_10=("oltre_10", lambda s: int(pd.Series(s).fillna(False).astype(bool).sum())),
+        oltre_15=("oltre_15", lambda s: int(pd.Series(s).fillna(False).astype(bool).sum())),
+        oltre_30=("oltre_30", lambda s: int(pd.Series(s).fillna(False).astype(bool).sum())),
+        oltre_60=("oltre_60", lambda s: int(pd.Series(s).fillna(False).astype(bool).sum())),
         minuti_ritardo_tot=("minuti_ritardo", "sum"),
         minuti_anticipo_tot=("minuti_anticipo", "sum"),
         minuti_netti_tot=("minuti_netti", "sum"),
@@ -204,6 +212,10 @@ def build_gold(cfg: Dict[str, Any], df: pd.DataFrame) -> Dict[str, pd.DataFrame]
         minuti_ritardo_tot=("minuti_ritardo_tot", "sum"),
         minuti_anticipo_tot=("minuti_anticipo_tot", "sum"),
         minuti_netti_tot=("minuti_netti_tot", "sum"),
+        ritardo_medio=("ritardo_medio", "mean"),
+        ritardo_mediano=("ritardo_mediano", "median"),
+        p90=("p90", "mean"),
+        p95=("p95", "mean"),
     ).reset_index()
 
     comb2["ruolo"] = "nodo"
@@ -216,11 +228,42 @@ def build_gold(cfg: Dict[str, Any], df: pd.DataFrame) -> Dict[str, pd.DataFrame]
     return out
 
 
+def gold_keys() -> Dict[str, List[str]]:
+    return {
+        "kpi_giorno_categoria": ["giorno", "categoria"],
+        "kpi_mese_categoria": ["mese", "categoria"],
+        "kpi_giorno": ["giorno"],
+        "kpi_mese": ["mese"],
+        "hist_mese_categoria": ["mese", "categoria", "bucket_ritardo_arrivo"],
+        "od_mese_categoria": ["mese", "categoria", "cod_partenza", "cod_arrivo"],
+        "stazioni_mese_categoria_ruolo": ["mese", "categoria", "cod_stazione", "ruolo"],
+        "stazioni_mese_categoria_nodo": ["mese", "categoria", "cod_stazione", "ruolo"],
+    }
+
+
 def save_gold_tables(tables: Dict[str, pd.DataFrame]) -> None:
-    ensure_dir(os.path.join("data", "gold"))
-    for name, df in tables.items():
-        csv_path = os.path.join("data", "gold", f"{name}.csv")
-        df.to_csv(csv_path, index=False)
+    out_dir = os.path.join("data", "gold")
+    ensure_dir(out_dir)
+
+    keys = gold_keys()
+
+    for name, df_new in tables.items():
+        path = os.path.join(out_dir, f"{name}.csv")
+
+        if os.path.exists(path):
+            df_old = pd.read_csv(path)
+            merged = pd.concat([df_old, df_new], ignore_index=True)
+        else:
+            merged = df_new.copy()
+
+        k = keys.get(name)
+        if k:
+            miss = [c for c in k if c not in merged.columns]
+            if miss:
+                raise RuntimeError(f"gold table {name} missing key columns {miss}")
+            merged = merged.drop_duplicates(subset=k, keep="last").sort_values(k)
+
+        merged.to_csv(path, index=False)
 
 
 def main() -> None:
