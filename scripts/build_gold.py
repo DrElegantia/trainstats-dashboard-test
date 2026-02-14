@@ -40,12 +40,24 @@ def _get_on_time_threshold(cfg: Dict[str, Any]) -> int:
     return 4
 
 
+def _ensure_obs_id(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    if "row_id" in df.columns:
+        df["_obs_id"] = df["row_id"].astype(str)
+        return df
+    df = df.reset_index(drop=True)
+    df["_obs_id"] = df.index.astype(str)
+    return df
+
+
 def build_metrics(cfg: Dict[str, Any], df: pd.DataFrame) -> pd.DataFrame:
     thr = _get_on_time_threshold(cfg)
     df = df.copy()
 
+    df = _ensure_obs_id(df)
+
     required_cols = [
-        "unique_key",
+        "_obs_id",
         "categoria",
         "numero_treno",
         "cod_partenza",
@@ -131,7 +143,7 @@ def agg_core(group_cols: List[str], df: pd.DataFrame) -> pd.DataFrame:
     g = df.groupby(group_cols, dropna=False)
 
     out = g.agg(
-        corse_osservate=("unique_key", "count"),
+        corse_osservate=("_obs_id", "count"),
         effettuate=("stato_corsa", lambda s: int((pd.Series(s) == "effettuato").sum())),
         cancellate=("stato_corsa", lambda s: int((pd.Series(s) == "cancellato").sum())),
         soppresse=("stato_corsa", lambda s: int((pd.Series(s) == "soppresso").sum())),
@@ -166,7 +178,7 @@ def build_gold(cfg: Dict[str, Any], df: pd.DataFrame) -> Dict[str, pd.DataFrame]
     out["kpi_mese"] = agg_core(["mese"], df)
 
     h = df.groupby(["mese", "categoria", "bucket_ritardo_arrivo"], dropna=False).agg(
-        count=("unique_key", "count"),
+        count=("_obs_id", "count"),
         minuti_ritardo=("minuti_ritardo", "sum"),
         minuti_anticipo=("minuti_anticipo", "sum"),
     ).reset_index()
