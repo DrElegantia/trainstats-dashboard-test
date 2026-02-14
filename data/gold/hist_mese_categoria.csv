@@ -1,0 +1,3 @@
+mese,categoria,bucket_ritardo_arrivo,count,minuti_ritardo,minuti_anticipo
+2026-02,REG,"(10,15]",1,15,0
+2026-02,REG,"(15,30]",1,20,0

@@ -1,0 +1,5 @@
+mese,categoria,cod_stazione,corse_osservate,effettuate,cancellate,soppresse,parzialmente_cancellate,info_mancante,in_orario,in_ritardo,in_anticipo,oltre_5,oltre_10,oltre_15,oltre_30,oltre_60,minuti_ritardo_tot,minuti_anticipo_tot,minuti_netti_tot,ruolo,nome_stazione
+2026-02,REG,S01326,1,1,0,0,0,0,0,1,0,1,1,0,0,0,15,0,15,nodo,MILANO GRECO PIRELLI
+2026-02,REG,S02026,1,1,0,0,0,0,0,1,0,1,1,1,0,0,20,0,20,nodo,BOLZANO
+2026-02,REG,S02430,1,1,0,0,0,0,0,1,0,1,1,1,0,0,20,0,20,nodo,VERONA PORTA NUOVA
+2026-02,REG,S04702,1,1,0,0,0,0,0,1,0,1,1,0,0,0,15,0,15,nodo,GENOVA BRIGNOLE
