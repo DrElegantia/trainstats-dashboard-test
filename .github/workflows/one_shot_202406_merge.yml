@@ -1,4 +1,4 @@
-name: One shot 2024-06 (days pipeline) merge into docs
+name: One shot 2024-06 (days -> trains -> KPI merge)
 
 on:
   workflow_dispatch:
@@ -155,7 +155,7 @@ jobs:
           print("written:", out_path, "rows:", len(out), "skipped_days:", skipped)
           PY
 
-      - name: Build kpi_giorno and kpi_mese (full schema) and merge into docs/data
+      - name: Build KPI day/month + by category and merge into docs/data
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -181,6 +181,7 @@ jobs:
           CREATE TABLE trains_clean AS
           SELECT
             strptime(ref_day, '%Y%m%d')::DATE AS giorno,
+            COALESCE(CAST(c AS VARCHAR), 'UNK') AS categoria,
             CASE
               WHEN ra IS NULL THEN NULL
               WHEN lower(trim(CAST(ra AS VARCHAR))) IN ('n','n.d.','nd','') THEN NULL
@@ -247,26 +248,88 @@ jobs:
           ORDER BY 1
           """).fetchdf()
 
+          kpi_giorno_cat_new = con.execute("""
+          SELECT
+            giorno,
+            categoria,
+            COUNT(*) AS corse_osservate,
+            COUNT(ra_min) AS effettuate,
+            SUM(CASE WHEN ra_min IS NULL THEN 1 ELSE 0 END) AS cancellate,
+            0 AS soppresse,
+            0 AS parzialmente_cancellate,
+            SUM(CASE WHEN ra_min IS NULL THEN 1 ELSE 0 END) AS info_mancante,
+            SUM(CASE WHEN ra_min IS NOT NULL AND ra_min = 0 THEN 1 ELSE 0 END) AS in_orario,
+            SUM(CASE WHEN ra_min IS NOT NULL AND ra_min > 0 THEN 1 ELSE 0 END) AS in_ritardo,
+            SUM(CASE WHEN ra_min IS NOT NULL AND ra_min < 0 THEN 1 ELSE 0 END) AS in_anticipo,
+            SUM(CASE WHEN ra_min > 5 THEN 1 ELSE 0 END) AS oltre_5,
+            SUM(CASE WHEN ra_min > 10 THEN 1 ELSE 0 END) AS oltre_10,
+            SUM(CASE WHEN ra_min > 15 THEN 1 ELSE 0 END) AS oltre_15,
+            SUM(CASE WHEN ra_min > 30 THEN 1 ELSE 0 END) AS oltre_30,
+            SUM(CASE WHEN ra_min > 60 THEN 1 ELSE 0 END) AS oltre_60,
+            SUM(CASE WHEN ra_min > 0 THEN ra_min ELSE 0 END) AS minuti_ritardo_tot,
+            SUM(CASE WHEN ra_min < 0 THEN -ra_min ELSE 0 END) AS minuti_anticipo_tot,
+            SUM(COALESCE(ra_min, 0)) AS minuti_netti_tot,
+            AVG(ra_min) AS ritardo_medio,
+            quantile_cont(ra_min, 0.5) AS ritardo_mediano,
+            quantile_cont(ra_min, 0.9) AS p90,
+            quantile_cont(ra_min, 0.95) AS p95
+          FROM trains_clean
+          GROUP BY 1,2
+          ORDER BY 1,2
+          """).fetchdf()
+
+          kpi_mese_cat_new = con.execute("""
+          SELECT
+            date_trunc('month', giorno)::DATE AS mese,
+            categoria,
+            COUNT(*) AS corse_osservate,
+            COUNT(ra_min) AS effettuate,
+            SUM(CASE WHEN ra_min IS NULL THEN 1 ELSE 0 END) AS cancellate,
+            0 AS soppresse,
+            0 AS parzialmente_cancellate,
+            SUM(CASE WHEN ra_min IS NULL THEN 1 ELSE 0 END) AS info_mancante,
+            SUM(CASE WHEN ra_min IS NOT NULL AND ra_min = 0 THEN 1 ELSE 0 END) AS in_orario,
+            SUM(CASE WHEN ra_min IS NOT NULL AND ra_min > 0 THEN 1 ELSE 0 END) AS in_ritardo,
+            SUM(CASE WHEN ra_min IS NOT NULL AND ra_min < 0 THEN 1 ELSE 0 END) AS in_anticipo,
+            SUM(CASE WHEN ra_min > 5 THEN 1 ELSE 0 END) AS oltre_5,
+            SUM(CASE WHEN ra_min > 10 THEN 1 ELSE 0 END) AS oltre_10,
+            SUM(CASE WHEN ra_min > 15 THEN 1 ELSE 0 END) AS oltre_15,
+            SUM(CASE WHEN ra_min > 30 THEN 1 ELSE 0 END) AS oltre_30,
+            SUM(CASE WHEN ra_min > 60 THEN 1 ELSE 0 END) AS oltre_60,
+            SUM(CASE WHEN ra_min > 0 THEN ra_min ELSE 0 END) AS minuti_ritardo_tot,
+            SUM(CASE WHEN ra_min < 0 THEN -ra_min ELSE 0 END) AS minuti_anticipo_tot,
+            SUM(COALESCE(ra_min, 0)) AS minuti_netti_tot,
+            AVG(ra_min) AS ritardo_medio,
+            quantile_cont(ra_min, 0.5) AS ritardo_mediano,
+            quantile_cont(ra_min, 0.9) AS p90,
+            quantile_cont(ra_min, 0.95) AS p95
+          FROM trains_clean
+          GROUP BY 1,2
+          ORDER BY 1,2
+          """).fetchdf()
+
           con.close()
 
-          def merge_csv(path: Path, new_df: pd.DataFrame, key: str):
+          def merge_csv(path: Path, new_df: pd.DataFrame, key_cols):
               if path.exists():
                   old = pd.read_csv(path)
                   df = pd.concat([old, new_df], ignore_index=True)
-                  df = df.drop_duplicates(subset=[key], keep="last")
-                  try:
-                      df = df.sort_values(key)
-                  except Exception:
-                      pass
+                  df = df.drop_duplicates(subset=key_cols, keep="last")
               else:
                   df = new_df
+              try:
+                  df = df.sort_values(key_cols)
+              except Exception:
+                  pass
               df.to_csv(path, index=False)
 
-          merge_csv(DOCS / "kpi_giorno.csv", kpi_giorno_new, "giorno")
-          merge_csv(DOCS / "kpi_mese.csv", kpi_mese_new, "mese")
+          merge_csv(DOCS / "kpi_giorno.csv", kpi_giorno_new, ["giorno"])
+          merge_csv(DOCS / "kpi_mese.csv", kpi_mese_new, ["mese"])
+          merge_csv(DOCS / "kpi_giorno_categoria.csv", kpi_giorno_cat_new, ["giorno", "categoria"])
+          merge_csv(DOCS / "kpi_mese_categoria.csv", kpi_mese_cat_new, ["mese", "categoria"])
 
           (ROOT / "docs" / ".nojekyll").touch()
-          print("merged into", DOCS)
+          print("updated docs/data KPI files")
           PY
 
       - name: Commit and push published datasets
@@ -274,5 +337,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add docs/data docs/.nojekyll
-          git commit -m "Backfill 2024-06 merge" || echo "No changes"
+          git commit -m "Backfill 2024-06 KPI merge" || echo "No changes"
           git push
