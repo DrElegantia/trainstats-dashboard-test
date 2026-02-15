@@ -1,4 +1,5 @@
-name: One shot 2024-06
+```yaml
+name: One shot 2024-06 (incremental merge)
 
 on:
   workflow_dispatch:
@@ -155,16 +156,17 @@ jobs:
           print("written:", out_path, "rows:", len(out), "skipped_days:", skipped)
           PY
 
-      - name: Build gold from trains for 202406
+      - name: Build gold for 202406 and merge into docs/data
         run: |
           python - <<'PY'
           import duckdb
+          import pandas as pd
           from pathlib import Path
 
           ROOT = Path(".").resolve()
           SILVER_TRAINS = (ROOT / "data" / "silver_trains").resolve()
-          GOLD = (ROOT / "data" / "gold").resolve()
-          GOLD.mkdir(parents=True, exist_ok=True)
+          DOCS = (ROOT / "docs" / "data").resolve()
+          DOCS.mkdir(parents=True, exist_ok=True)
 
           only_month = "202406"
           year = only_month[:4]
@@ -173,7 +175,6 @@ jobs:
               raise SystemExit(f"Missing {in_path}")
 
           con = duckdb.connect()
-
           con.execute("DROP VIEW IF EXISTS trains_all")
           con.execute(f"CREATE VIEW trains_all AS SELECT * FROM read_parquet('{in_path.as_posix()}')")
 
@@ -182,11 +183,6 @@ jobs:
           CREATE TABLE trains_clean AS
           SELECT
             strptime(ref_day, '%Y%m%d')::DATE AS giorno,
-            ref_day,
-            n AS numero_treno,
-            c AS categoria,
-            p AS origine,
-            a AS destinazione,
             CASE
               WHEN ra IS NULL THEN NULL
               WHEN lower(trim(CAST(ra AS VARCHAR))) IN ('n','n.d.','nd','') THEN NULL
@@ -195,9 +191,7 @@ jobs:
           FROM trains_all
           """)
 
-          con.execute("DROP TABLE IF EXISTS kpi_giorno")
-          con.execute("""
-          CREATE TABLE kpi_giorno AS
+          kpi_giorno_new = con.execute("""
           SELECT
             giorno,
             COUNT(*) AS corse_osservate,
@@ -212,45 +206,51 @@ jobs:
           FROM trains_clean
           GROUP BY 1
           ORDER BY 1
-          """)
+          """).fetchdf()
 
-          con.execute(f"COPY (SELECT * FROM kpi_giorno) TO '{(GOLD / 'kpi_giorno.csv').as_posix()}' (HEADER, DELIMITER ',')")
-
-          con.execute("DROP TABLE IF EXISTS kpi_mese")
-          con.execute("""
-          CREATE TABLE kpi_mese AS
+          kpi_mese_new = con.execute("""
           SELECT
             date_trunc('month', giorno)::DATE AS mese,
-            SUM(corse_osservate) AS corse_osservate,
-            AVG(ritardo_medio) AS ritardo_medio,
-            AVG(ritardo_mediano) AS ritardo_mediano,
-            AVG(p90) AS p90,
-            SUM(oltre_5) AS oltre_5,
-            SUM(oltre_10) AS oltre_10,
-            SUM(oltre_15) AS oltre_15,
-            SUM(oltre_30) AS oltre_30,
-            SUM(oltre_60) AS oltre_60
-          FROM kpi_giorno
+            COUNT(*) AS corse_osservate,
+            AVG(ritardo_arrivo_min) AS ritardo_medio,
+            quantile_cont(ritardo_arrivo_min, 0.5) AS ritardo_mediano,
+            quantile_cont(ritardo_arrivo_min, 0.9) AS p90,
+            SUM(CASE WHEN ritardo_arrivo_min > 5 THEN 1 ELSE 0 END) AS oltre_5,
+            SUM(CASE WHEN ritardo_arrivo_min > 10 THEN 1 ELSE 0 END) AS oltre_10,
+            SUM(CASE WHEN ritardo_arrivo_min > 15 THEN 1 ELSE 0 END) AS oltre_15,
+            SUM(CASE WHEN ritardo_arrivo_min > 30 THEN 1 ELSE 0 END) AS oltre_30,
+            SUM(CASE WHEN ritardo_arrivo_min > 60 THEN 1 ELSE 0 END) AS oltre_60
+          FROM trains_clean
           GROUP BY 1
           ORDER BY 1
-          """)
-          con.execute(f"COPY (SELECT * FROM kpi_mese) TO '{(GOLD / 'kpi_mese.csv').as_posix()}' (HEADER, DELIMITER ',')")
+          """).fetchdf()
 
           con.close()
-          print("written gold in:", GOLD)
+
+          def merge_csv(path: Path, new_df: pd.DataFrame, key: str):
+              if path.exists():
+                  old = pd.read_csv(path, parse_dates=[key])
+                  merged = pd.concat([old, new_df], ignore_index=True)
+              else:
+                  merged = new_df.copy()
+              merged[key] = pd.to_datetime(merged[key], errors="coerce")
+              merged = merged.dropna(subset=[key])
+              merged = merged.drop_duplicates(subset=[key], keep="last")
+              merged = merged.sort_values(key)
+              merged.to_csv(path, index=False)
+
+          merge_csv(DOCS / "kpi_giorno.csv", kpi_giorno_new, "giorno")
+          merge_csv(DOCS / "kpi_mese.csv", kpi_mese_new, "mese")
+
+          (ROOT / "docs" / ".nojekyll").touch()
+          print("merged into", DOCS)
           PY
 
-      - name: Copy gold to docs for Pages
-        run: |
-          mkdir -p docs/data
-          rm -f docs/data/*.csv
-          cp data/gold/*.csv docs/data/
-          touch docs/.nojekyll
-
-      - name: Commit and push gold
+      - name: Commit and push docs/data
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/gold docs/data docs/.nojekyll
-          git commit -m "One shot gold 2024-06" || echo "No changes"
+          git add docs/data docs/.nojekyll
+          git commit -m "One shot merge gold 2024-06" || echo "No changes"
           git push
+```
