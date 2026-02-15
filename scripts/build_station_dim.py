@@ -1,4 +1,3 @@
-# build_station_dim.py
 from __future__ import annotations
 
 import io
@@ -11,6 +10,27 @@ from .utils import ensure_dir, http_get_with_retry, load_yaml
 
 
 ISTAT_COMUNI_URL = "https://www.istat.it/storage/codici-unita-amministrative/Elenco-comuni-italiani.csv"
+
+CAPOLUOGHI_DEFAULT = [
+    "Agrigento","Alessandria","Ancona","Aosta","Arezzo","Ascoli Piceno","Asti","Avellino",
+    "Bari","Barletta","Belluno","Benevento","Bergamo","Biella","Bologna","Bolzano","Brescia","Brindisi",
+    "Cagliari","Caltanissetta","Campobasso","Carbonia","Caserta","Catania","Catanzaro","Chieti","Como","Cosenza",
+    "Cremona","Crotone","Cuneo",
+    "Enna",
+    "Fermo","Ferrara","Firenze","Foggia","Forlì","Frosinone",
+    "Genova","Gorizia","Grosseto",
+    "Imperia","Isernia",
+    "L'Aquila","La Spezia","Latina","Lecce","Lecco","Livorno","Lodi","Lucca",
+    "Macerata","Mantova","Massa","Matera","Messina","Milano","Modena","Monza",
+    "Napoli","Novara","Nuoro",
+    "Oristano",
+    "Padova","Palermo","Parma","Pavia","Perugia","Pesaro","Pescara","Piacenza","Pisa","Pistoia","Pordenone","Potenza","Prato",
+    "Ragusa","Ravenna","Reggio Calabria","Reggio Emilia","Rieti","Rimini","Roma","Rovigo",
+    "Salerno","Sassari","Savona","Siena","Siracusa","Sondrio",
+    "Taranto","Teramo","Terni","Torino","Trapani","Trento","Treviso","Trieste",
+    "Udine",
+    "Varese","Venezia","Verbania","Vercelli","Verona","Vibo Valentia","Vicenza","Viterbo"
+]
 
 
 def load_gold_station_table() -> pd.DataFrame:
@@ -54,9 +74,77 @@ def _pick_col(cols: list[str], must_contain: str) -> Optional[str]:
     return None
 
 
+def _find_city_col(cols: list[str]) -> Optional[str]:
+    for c in cols:
+        cl = c.lower()
+        if "denominazione" in cl and "ital" in cl:
+            return c
+    return _pick_col(cols, "denominazione")
+
+
+def _find_cap_flag_col(cols: list[str]) -> Optional[str]:
+    for c in cols:
+        cl = c.lower()
+        if "capoluogo" in cl and "prov" in cl:
+            return c
+    return _pick_col(cols, "capoluogo")
+
+
+def _parse_istat_csv(raw_text: str) -> pd.DataFrame:
+    df = pd.read_csv(io.StringIO(raw_text), sep=None, engine="python", dtype=str)
+    df.columns = [str(c).strip() for c in df.columns]
+    return df
+
+
+def _build_default_capoluoghi() -> pd.DataFrame:
+    out = pd.DataFrame({"citta": sorted(set([c.strip() for c in CAPOLUOGHI_DEFAULT if str(c).strip()]))})
+    out = out.reset_index(drop=True)
+    return out
+
+
+def _try_refresh_from_istat(cfg: Dict[str, Any]) -> Optional[pd.DataFrame]:
+    net = cfg.get("network", {})
+    timeout = int(net.get("timeout_seconds", 20))
+    max_retries = int(net.get("max_retries", 3))
+    backoff = int(net.get("backoff_factor", 2))
+
+    r = http_get_with_retry(
+        ISTAT_COMUNI_URL,
+        timeout=timeout,
+        max_retries=max_retries,
+        backoff_factor=backoff,
+    )
+    raw = r.content.decode("utf8", errors="replace")
+    if "<html" in raw[:500].lower():
+        raise RuntimeError("ISTAT download returned HTML, not CSV")
+
+    df = _parse_istat_csv(raw)
+    cols = list(df.columns)
+
+    col_city = _find_city_col(cols)
+    col_flag = _find_cap_flag_col(cols)
+    if not col_city or not col_flag:
+        raise RuntimeError(f"ISTAT columns not found. columns={cols}")
+
+    flag = df[col_flag].astype(str).str.strip().str.upper()
+    is_cap = flag.isin(["1", "SI", "SÌ", "TRUE", "Y", "YES"])
+
+    out = df.loc[is_cap, [col_city]].rename(columns={col_city: "citta"})
+    out["citta"] = out["citta"].astype(str).str.strip()
+    out = out[out["citta"] != ""].drop_duplicates(subset=["citta"]).sort_values("citta").reset_index(drop=True)
+
+    if len(out) < 50:
+        raise RuntimeError(f"Too few capoluoghi parsed from ISTAT: {len(out)}")
+
+    return out
+
+
 def build_capoluoghi_provincia_csv(cfg: Dict[str, Any]) -> pd.DataFrame:
     local_path = os.path.join("data", "stations", "capoluoghi_provincia.csv")
-    if os.path.exists(local_path):
+
+    refresh = os.environ.get("REFRESH_CAPOLUOGHI_ISTAT", "").strip() == "1"
+
+    if os.path.exists(local_path) and not refresh:
         df = pd.read_csv(local_path, dtype=str)
         if "citta" not in df.columns:
             for alt in ("capoluogo", "nome", "comune", "city"):
@@ -66,47 +154,27 @@ def build_capoluoghi_provincia_csv(cfg: Dict[str, Any]) -> pd.DataFrame:
         if "citta" not in df.columns:
             raise ValueError(f"{local_path} must contain a 'citta' column")
         df["citta"] = df["citta"].astype(str).str.strip()
-        df = df[df["citta"] != ""].drop_duplicates(subset=["citta"]).sort_values("citta")
-        return df[["citta"]].reset_index(drop=True)
+        df = df[df["citta"] != ""].drop_duplicates(subset=["citta"]).sort_values("citta").reset_index(drop=True)
+        return df[["citta"]]
 
-    net = cfg.get("network", {})
-    timeout = int(net.get("timeout_seconds", 20))
-    max_retries = int(net.get("max_retries", 3))
-    backoff = int(net.get("backoff_factor", 2))
+    out = None
 
-    try:
-        r = http_get_with_retry(ISTAT_COMUNI_URL, timeout=timeout, max_retries=max_retries, backoff_factor=backoff)
-        raw = r.content.decode("utf-8", errors="replace")
-        df = pd.read_csv(io.StringIO(raw), sep=";", dtype=str)
-        df.columns = [str(c).strip() for c in df.columns]
+    if refresh:
+        try:
+            out = _try_refresh_from_istat(cfg)
+            print({"capoluoghi_source": "istat_refresh", "capoluoghi_rows": int(len(out))})
+        except Exception as e:
+            print({"capoluoghi_source": "istat_refresh_failed_using_default", "warning": repr(e)})
+            out = None
 
-        col_city = _pick_col(list(df.columns), "Denominazione in italiano") or _pick_col(list(df.columns), "Denominazione in Italiano")
-        col_flag = _pick_col(list(df.columns), "Flag Comune capoluogo di provincia") or _pick_col(list(df.columns), "capoluogo di provincia")
+    if out is None:
+        out = _build_default_capoluoghi()
+        print({"capoluoghi_source": "embedded_default", "capoluoghi_rows": int(len(out))})
 
-        if not col_city or not col_flag:
-            raise ValueError("ISTAT columns not found (city name or capoluogo flag)")
+    ensure_dir(os.path.dirname(local_path))
+    out.to_csv(local_path, index=False)
 
-        flag = df[col_flag].astype(str).str.strip()
-        is_cap = flag.isin(["1", "SI", "SÌ", "TRUE", "True", "true", "Y", "y"])
-
-        out = df.loc[is_cap, [col_city]].rename(columns={col_city: "citta"})
-        out["citta"] = out["citta"].astype(str).str.strip()
-        out = out[out["citta"] != ""].drop_duplicates(subset=["citta"]).sort_values("citta").reset_index(drop=True)
-
-        ensure_dir(os.path.dirname(local_path))
-        out.to_csv(local_path, index=False)
-        return out
-
-    except Exception as e:
-        fallback = [
-            "Aosta","Torino","Genova","Milano","Trento","Venezia","Trieste","Bologna","Firenze","Ancona",
-            "Perugia","Roma","L'Aquila","Campobasso","Napoli","Bari","Potenza","Catanzaro","Palermo","Cagliari"
-        ]
-        out = pd.DataFrame({"citta": fallback}).drop_duplicates().sort_values("citta").reset_index(drop=True)
-        ensure_dir(os.path.dirname(local_path))
-        out.to_csv(local_path, index=False)
-        print({"capoluoghi_source": "fallback", "warning": str(e)})
-        return out
+    return out
 
 
 def main() -> None:
