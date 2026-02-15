@@ -1,4 +1,4 @@
-name: One shot 2026-01 (incremental merge)
+name: One shot 2024-06 (bronze days -> trains -> full gold -> merge)
 
 on:
   workflow_dispatch:
@@ -13,6 +13,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -24,7 +26,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install pandas pyarrow duckdb
 
-      - name: Bronze to silver (days) for 202601
+      - name: Bronze days to silver days (202406)
         run: |
           python - <<'PY'
           import json, re
@@ -32,11 +34,11 @@ jobs:
           from pathlib import Path
 
           ROOT = Path(".").resolve()
-          BRONZE = (ROOT / "data" / "bronze").resolve()
-          SILVER = (ROOT / "data" / "silver").resolve()
+          BRONZE = ROOT / "data" / "bronze"
+          SILVER = ROOT / "data" / "silver"
           SILVER.mkdir(parents=True, exist_ok=True)
 
-          only_month = "202601"
+          only_month = "202406"
           date_re = re.compile(r"(\d{8})")
 
           def yyyymmdd_from_name(name: str):
@@ -72,11 +74,7 @@ jobs:
           common_days = sorted(set(meta_by_day.keys()) & set(data_by_day.keys()))
           print("month:", only_month, "days:", len(common_days))
           if not common_days:
-              raise SystemExit("No days to process for month")
-
-          year = only_month[:4]
-          out_path = (SILVER / year / f"{only_month}.parquet").resolve()
-          out_path.parent.mkdir(parents=True, exist_ok=True)
+              raise SystemExit("No days found for month")
 
           frames = []
           for day in common_days:
@@ -85,18 +83,21 @@ jobs:
               df = pd.read_csv(csv_path, compression="gzip")
               df.columns = [str(c).lower().strip() for c in df.columns]
               df["ref_day"] = day
-              df["__source_path"] = str(csv_path.relative_to(BRONZE))
+              df["__source_path"] = str(csv_path)
               flat = flatten_meta(meta)
               for k, v in flat.items():
                   df[k] = v
               frames.append(df)
 
-          out = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+          out = pd.concat(frames, ignore_index=True)
+          year = only_month[:4]
+          out_path = (SILVER / year / f"{only_month}.parquet").resolve()
+          out_path.parent.mkdir(parents=True, exist_ok=True)
           out.to_parquet(out_path, index=False)
           print("written:", out_path, "rows:", len(out))
           PY
 
-      - name: Silver days to silver trains for 202601
+      - name: Silver days to silver trains (202406)
         run: |
           python - <<'PY'
           import ast
@@ -104,11 +105,11 @@ jobs:
           from pathlib import Path
 
           ROOT = Path(".").resolve()
-          SILVER_DAYS = (ROOT / "data" / "silver").resolve()
-          SILVER_TRAINS = (ROOT / "data" / "silver_trains").resolve()
+          SILVER_DAYS = ROOT / "data" / "silver"
+          SILVER_TRAINS = ROOT / "data" / "silver_trains"
           SILVER_TRAINS.mkdir(parents=True, exist_ok=True)
 
-          only_month = "202601"
+          only_month = "202406"
           year = only_month[:4]
           in_path = (SILVER_DAYS / year / f"{only_month}.parquet").resolve()
           if not in_path.exists():
@@ -141,7 +142,6 @@ jobs:
               tdf["ref_day"] = row.get("ref_day")
               tdf["giorno"] = row.get("giorno")
               tdf["timezone"] = row.get("timezone")
-              tdf["__source_path"] = row.get("__source_path")
               for c in df.columns:
                   if str(c).startswith("meta_"):
                       tdf[c] = row.get(c)
@@ -155,27 +155,26 @@ jobs:
           print("written:", out_path, "rows:", len(out), "skipped_days:", skipped)
           PY
 
-      - name: Build gold for 202601 and merge into docs/data
+      - name: Build full kpi_giorno and kpi_mese for 202406 (dashboard schema) and merge into docs/data
         run: |
           python - <<'PY'
+          from pathlib import Path
           import duckdb
           import pandas as pd
-          from pathlib import Path
 
           ROOT = Path(".").resolve()
-          SILVER_TRAINS = (ROOT / "data" / "silver_trains").resolve()
-          DOCS = (ROOT / "docs" / "data").resolve()
+          DOCS = ROOT / "docs" / "data"
           DOCS.mkdir(parents=True, exist_ok=True)
 
-          only_month = "202601"
+          only_month = "202406"
           year = only_month[:4]
-          in_path = (SILVER_TRAINS / year / f"{only_month}.parquet").resolve()
-          if not in_path.exists():
-              raise SystemExit(f"Missing {in_path}")
+          trains_path = (ROOT / "data" / "silver_trains" / year / f"{only_month}.parquet").resolve()
+          if not trains_path.exists():
+              raise SystemExit(f"Missing {trains_path}")
 
           con = duckdb.connect()
           con.execute("DROP VIEW IF EXISTS trains_all")
-          con.execute(f"CREATE VIEW trains_all AS SELECT * FROM read_parquet('{in_path.as_posix()}')")
+          con.execute(f"CREATE VIEW trains_all AS SELECT * FROM read_parquet('{trains_path.as_posix()}')")
 
           con.execute("DROP TABLE IF EXISTS trains_clean")
           con.execute("""
@@ -186,7 +185,7 @@ jobs:
               WHEN ra IS NULL THEN NULL
               WHEN lower(trim(CAST(ra AS VARCHAR))) IN ('n','n.d.','nd','') THEN NULL
               ELSE TRY_CAST(ra AS DOUBLE)
-            END AS ritardo_arrivo_min
+            END AS ra_min
           FROM trains_all
           """)
 
@@ -194,14 +193,26 @@ jobs:
           SELECT
             giorno,
             COUNT(*) AS corse_osservate,
-            AVG(ritardo_arrivo_min) AS ritardo_medio,
-            quantile_cont(ritardo_arrivo_min, 0.5) AS ritardo_mediano,
-            quantile_cont(ritardo_arrivo_min, 0.9) AS p90,
-            SUM(CASE WHEN ritardo_arrivo_min > 5 THEN 1 ELSE 0 END) AS oltre_5,
-            SUM(CASE WHEN ritardo_arrivo_min > 10 THEN 1 ELSE 0 END) AS oltre_10,
-            SUM(CASE WHEN ritardo_arrivo_min > 15 THEN 1 ELSE 0 END) AS oltre_15,
-            SUM(CASE WHEN ritardo_arrivo_min > 30 THEN 1 ELSE 0 END) AS oltre_30,
-            SUM(CASE WHEN ritardo_arrivo_min > 60 THEN 1 ELSE 0 END) AS oltre_60
+            COUNT(ra_min) AS effettuate,
+            SUM(CASE WHEN ra_min IS NULL THEN 1 ELSE 0 END) AS cancellate,
+            0 AS soppresse,
+            0 AS parzialmente_cancellate,
+            SUM(CASE WHEN ra_min IS NULL THEN 1 ELSE 0 END) AS info_mancante,
+            SUM(CASE WHEN ra_min IS NOT NULL AND ra_min = 0 THEN 1 ELSE 0 END) AS in_orario,
+            SUM(CASE WHEN ra_min IS NOT NULL AND ra_min > 0 THEN 1 ELSE 0 END) AS in_ritardo,
+            SUM(CASE WHEN ra_min IS NOT NULL AND ra_min < 0 THEN 1 ELSE 0 END) AS in_anticipo,
+            SUM(CASE WHEN ra_min > 5 THEN 1 ELSE 0 END) AS oltre_5,
+            SUM(CASE WHEN ra_min > 10 THEN 1 ELSE 0 END) AS oltre_10,
+            SUM(CASE WHEN ra_min > 15 THEN 1 ELSE 0 END) AS oltre_15,
+            SUM(CASE WHEN ra_min > 30 THEN 1 ELSE 0 END) AS oltre_30,
+            SUM(CASE WHEN ra_min > 60 THEN 1 ELSE 0 END) AS oltre_60,
+            SUM(CASE WHEN ra_min > 0 THEN ra_min ELSE 0 END) AS minuti_ritardo_tot,
+            SUM(CASE WHEN ra_min < 0 THEN -ra_min ELSE 0 END) AS minuti_anticipo_tot,
+            SUM(COALESCE(ra_min, 0)) AS minuti_netti_tot,
+            AVG(ra_min) AS ritardo_medio,
+            quantile_cont(ra_min, 0.5) AS ritardo_mediano,
+            quantile_cont(ra_min, 0.9) AS p90,
+            quantile_cont(ra_min, 0.95) AS p95
           FROM trains_clean
           GROUP BY 1
           ORDER BY 1
@@ -211,14 +222,26 @@ jobs:
           SELECT
             date_trunc('month', giorno)::DATE AS mese,
             COUNT(*) AS corse_osservate,
-            AVG(ritardo_arrivo_min) AS ritardo_medio,
-            quantile_cont(ritardo_arrivo_min, 0.5) AS ritardo_mediano,
-            quantile_cont(ritardo_arrivo_min, 0.9) AS p90,
-            SUM(CASE WHEN ritardo_arrivo_min > 5 THEN 1 ELSE 0 END) AS oltre_5,
-            SUM(CASE WHEN ritardo_arrivo_min > 10 THEN 1 ELSE 0 END) AS oltre_10,
-            SUM(CASE WHEN ritardo_arrivo_min > 15 THEN 1 ELSE 0 END) AS oltre_15,
-            SUM(CASE WHEN ritardo_arrivo_min > 30 THEN 1 ELSE 0 END) AS oltre_30,
-            SUM(CASE WHEN ritardo_arrivo_min > 60 THEN 1 ELSE 0 END) AS oltre_60
+            COUNT(ra_min) AS effettuate,
+            SUM(CASE WHEN ra_min IS NULL THEN 1 ELSE 0 END) AS cancellate,
+            0 AS soppresse,
+            0 AS parzialmente_cancellate,
+            SUM(CASE WHEN ra_min IS NULL THEN 1 ELSE 0 END) AS info_mancante,
+            SUM(CASE WHEN ra_min IS NOT NULL AND ra_min = 0 THEN 1 ELSE 0 END) AS in_orario,
+            SUM(CASE WHEN ra_min IS NOT NULL AND ra_min > 0 THEN 1 ELSE 0 END) AS in_ritardo,
+            SUM(CASE WHEN ra_min IS NOT NULL AND ra_min < 0 THEN 1 ELSE 0 END) AS in_anticipo,
+            SUM(CASE WHEN ra_min > 5 THEN 1 ELSE 0 END) AS oltre_5,
+            SUM(CASE WHEN ra_min > 10 THEN 1 ELSE 0 END) AS oltre_10,
+            SUM(CASE WHEN ra_min > 15 THEN 1 ELSE 0 END) AS oltre_15,
+            SUM(CASE WHEN ra_min > 30 THEN 1 ELSE 0 END) AS oltre_30,
+            SUM(CASE WHEN ra_min > 60 THEN 1 ELSE 0 END) AS oltre_60,
+            SUM(CASE WHEN ra_min > 0 THEN ra_min ELSE 0 END) AS minuti_ritardo_tot,
+            SUM(CASE WHEN ra_min < 0 THEN -ra_min ELSE 0 END) AS minuti_anticipo_tot,
+            SUM(COALESCE(ra_min, 0)) AS minuti_netti_tot,
+            AVG(ra_min) AS ritardo_medio,
+            quantile_cont(ra_min, 0.5) AS ritardo_mediano,
+            quantile_cont(ra_min, 0.9) AS p90,
+            quantile_cont(ra_min, 0.95) AS p95
           FROM trains_clean
           GROUP BY 1
           ORDER BY 1
@@ -228,15 +251,16 @@ jobs:
 
           def merge_csv(path: Path, new_df: pd.DataFrame, key: str):
               if path.exists():
-                  old = pd.read_csv(path, parse_dates=[key])
-                  merged = pd.concat([old, new_df], ignore_index=True)
+                  old = pd.read_csv(path)
+                  df = pd.concat([old, new_df], ignore_index=True)
+                  df = df.drop_duplicates(subset=[key], keep="last")
+                  try:
+                      df = df.sort_values(key)
+                  except Exception:
+                      pass
               else:
-                  merged = new_df.copy()
-              merged[key] = pd.to_datetime(merged[key], errors="coerce")
-              merged = merged.dropna(subset=[key])
-              merged = merged.drop_duplicates(subset=[key], keep="last")
-              merged = merged.sort_values(key)
-              merged.to_csv(path, index=False)
+                  df = new_df
+              df.to_csv(path, index=False)
 
           merge_csv(DOCS / "kpi_giorno.csv", kpi_giorno_new, "giorno")
           merge_csv(DOCS / "kpi_mese.csv", kpi_mese_new, "mese")
@@ -245,10 +269,10 @@ jobs:
           print("merged into", DOCS)
           PY
 
-      - name: Commit and push docs/data
+      - name: Commit and push published datasets
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add docs/data docs/.nojekyll
-          git commit -m "One shot merge gold 2026-01" || echo "No changes"
+          git commit -m "Backfill 2024-06 (full schema) merge" || echo "No changes"
           git push
