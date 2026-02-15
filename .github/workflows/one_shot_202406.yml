@@ -1,4 +1,3 @@
-```yaml
 name: One shot 2024-06 (incremental merge)
 
 on:
@@ -253,4 +252,3 @@ jobs:
           git add docs/data docs/.nojekyll
           git commit -m "One shot merge gold 2024-06" || echo "No changes"
           git push
-```
