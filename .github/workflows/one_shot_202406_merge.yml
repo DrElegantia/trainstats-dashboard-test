@@ -206,10 +206,20 @@ jobs:
                       df[c] = pd.NA
               return df[cols]
 
+          def _norm_key(series: pd.Series, name: str) -> pd.Series:
+              s = series.copy()
+              if name in ("giorno", "mese"):
+                  dt = pd.to_datetime(s, errors="coerce")
+                  if dt.notna().any():
+                      out = dt.dt.date.astype(str)
+                      return out.where(dt.notna(), s.astype(str))
+              return s.astype(str)
+
           def merge_csv_safe(path: Path, new_df: pd.DataFrame, key_cols):
+              new_df = new_df.copy()
               for k in key_cols:
                   if k not in new_df.columns:
-                      raise KeyError(f"merge_csv: missing key col {k} for {path.name}. have={list(new_df.columns)[:140]}")
+                      raise KeyError(f"merge_csv: missing key col {k} for {path.name}. have={list(new_df.columns)[:160]}")
 
               if path.exists():
                   old = pd.read_csv(path)
@@ -219,15 +229,35 @@ jobs:
                           new_df[c] = pd.NA
                   new_df = new_df[old.columns]
 
-                  old_i = old.set_index(key_cols)
-                  new_i = new_df.set_index(key_cols)
+                  for k in key_cols:
+                      old[k] = _norm_key(old[k], k)
+                      new_df[k] = _norm_key(new_df[k], k)
 
-                  old_i.update(new_i)
+                  old = old.drop_duplicates(subset=key_cols, keep="last")
+                  new_df = new_df.drop_duplicates(subset=key_cols, keep="last")
 
-                  add_i = new_i.loc[~new_i.index.isin(old_i.index)]
-                  out = pd.concat([old_i, add_i], axis=0).reset_index()
+                  merged = old.merge(new_df, on=key_cols, how="outer", suffixes=("", "__new"))
+
+                  base_cols = list(old.columns)
+                  for c in base_cols:
+                      if c in key_cols:
+                          continue
+                      cn = c + "__new"
+                      if cn in merged.columns:
+                          merged[c] = merged[cn].combine_first(merged[c])
+                          merged = merged.drop(columns=[cn])
+
+                  leftover_new = [c for c in merged.columns if c.endswith("__new")]
+                  for cn in leftover_new:
+                      c = cn[:-5]
+                      merged[c] = merged[cn]
+                      merged = merged.drop(columns=[cn])
+
+                  out = merged
               else:
                   out = new_df.drop_duplicates(subset=key_cols, keep="last")
+                  for k in key_cols:
+                      out[k] = _norm_key(out[k], k)
 
               try:
                   out = out.sort_values(key_cols)
@@ -269,9 +299,6 @@ jobs:
           con.execute("PRAGMA threads=4")
           con.execute("DROP VIEW IF EXISTS trains_all")
           con.execute(f"CREATE VIEW trains_all AS SELECT * FROM read_parquet('{trains_path.as_posix()}')")
-
-          print(con.execute("SELECT typeof(fr), typeof(list_extract(fr,1)) FROM trains_all WHERE fr IS NOT NULL LIMIT 1").fetchall())
-          print(con.execute("SELECT list_extract(fr,1) FROM trains_all WHERE fr IS NOT NULL LIMIT 1").fetchall())
 
           con.execute("DROP TABLE IF EXISTS trains_clean")
           con.execute("""
