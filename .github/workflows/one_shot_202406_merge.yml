@@ -172,25 +172,6 @@ jobs:
           if not trains_path.exists():
               raise SystemExit(f"Missing {trains_path}")
 
-          def merge_csv(path: Path, new_df: pd.DataFrame, key_cols):
-              for k in key_cols:
-                  if k not in new_df.columns:
-                      raise KeyError(f"merge_csv: missing key col {k} for {path.name}. have={list(new_df.columns)[:60]}")
-              if path.exists():
-                  old = pd.read_csv(path)
-                  df = pd.concat([old, new_df], ignore_index=True)
-                  for k in key_cols:
-                      if k not in df.columns:
-                          df[k] = pd.NA
-                  df = df.drop_duplicates(subset=key_cols, keep="last")
-              else:
-                  df = new_df.drop_duplicates(subset=key_cols, keep="last")
-              try:
-                  df = df.sort_values(key_cols)
-              except Exception:
-                  pass
-              df.to_csv(path, index=False)
-
           def align_to_existing_schema(target: Path, df: pd.DataFrame):
               if not target.exists():
                   return df
@@ -200,6 +181,45 @@ jobs:
                   if c not in df.columns:
                       df[c] = pd.NA
               return df[cols]
+
+          def merge_csv_safe(path: Path, new_df: pd.DataFrame, key_cols):
+              for k in key_cols:
+                  if k not in new_df.columns:
+                      raise KeyError(f"merge_csv: missing key col {k} for {path.name}. have={list(new_df.columns)[:60]}")
+
+              if path.exists():
+                  old = pd.read_csv(path)
+
+                  for c in old.columns:
+                      if c not in new_df.columns:
+                          new_df[c] = pd.NA
+                  new_df = new_df[old.columns]
+
+                  old_i = old.set_index(key_cols)
+                  new_i = new_df.set_index(key_cols)
+
+                  old_i.update(new_i)
+
+                  add_i = new_i.loc[~new_i.index.isin(old_i.index)]
+                  out = pd.concat([old_i, add_i], axis=0).reset_index()
+              else:
+                  out = new_df.drop_duplicates(subset=key_cols, keep="last")
+
+              try:
+                  out = out.sort_values(key_cols)
+              except Exception:
+                  pass
+              out.to_csv(path, index=False)
+
+          def build_station_code_map(stazioni_path: Path):
+              if not stazioni_path.exists():
+                  return {}
+              old = pd.read_csv(stazioni_path)
+              if "nome_stazione" in old.columns and "cod_stazione" in old.columns:
+                  sub = old[["nome_stazione", "cod_stazione"]].dropna()
+                  sub = sub.drop_duplicates()
+                  return dict(zip(sub["nome_stazione"].astype(str), sub["cod_stazione"].astype(str)))
+              return {}
 
           con = duckdb.connect()
           con.execute("PRAGMA threads=4")
@@ -234,6 +254,7 @@ jobs:
               mese,
               categoria,
               numero_treno,
+              ra_min AS ra_min_treno,
               fr,
               array_length(fr) AS max_idx
             FROM trains_clean
@@ -245,6 +266,7 @@ jobs:
               mese,
               categoria,
               numero_treno,
+              ra_min_treno,
               max_idx,
               UNNEST(range(1, max_idx + 1)) AS idx
             FROM base
@@ -257,6 +279,7 @@ jobs:
               base.numero_treno,
               idxs.idx,
               base.max_idx,
+              base.ra_min_treno,
               list_extract(base.fr, idxs.idx) AS stop
             FROM base
             JOIN idxs
@@ -271,20 +294,16 @@ jobs:
             mese,
             categoria,
             numero_treno,
-            CAST(stop.c AS VARCHAR) AS cod_stazione,
             CAST(stop.n AS VARCHAR) AS nome_stazione,
+            CAST(stop.n AS VARCHAR) AS cod_stazione_grezzo,
             CASE
               WHEN idx = 1 THEN 'PARTENZA'
               WHEN idx = max_idx THEN 'ARRIVO'
               ELSE 'TRANSITO'
             END AS ruolo,
-            CASE
-              WHEN stop.ra IS NULL THEN NULL
-              WHEN lower(trim(CAST(stop.ra AS VARCHAR))) IN ('n','n.d.','nd','') THEN NULL
-              ELSE TRY_CAST(stop.ra AS DOUBLE)
-            END AS ra_min
+            ra_min_treno AS ra_min
           FROM s
-          WHERE stop.c IS NOT NULL
+          WHERE stop.n IS NOT NULL
           """)
 
           kpi_giorno = con.execute("""
@@ -409,7 +428,7 @@ jobs:
           SELECT
             mese,
             categoria,
-            cod_stazione,
+            cod_stazione_grezzo,
             any_value(nome_stazione) AS nome_stazione,
             COUNT(*) AS corse_osservate,
             COUNT(ra_min) AS effettuate,
@@ -431,7 +450,7 @@ jobs:
             mese,
             categoria,
             ruolo,
-            cod_stazione,
+            cod_stazione_grezzo,
             any_value(nome_stazione) AS nome_stazione,
             COUNT(*) AS corse_osservate,
             COUNT(ra_min) AS effettuate,
@@ -465,15 +484,33 @@ jobs:
 
           con.close()
 
-          merge_csv(DOCS / "kpi_giorno.csv", align_to_existing_schema(DOCS / "kpi_giorno.csv", kpi_giorno), ["giorno"])
-          merge_csv(DOCS / "kpi_mese.csv", align_to_existing_schema(DOCS / "kpi_mese.csv", kpi_mese), ["mese"])
-          merge_csv(DOCS / "kpi_giorno_categoria.csv", align_to_existing_schema(DOCS / "kpi_giorno_categoria.csv", kpi_giorno_cat), ["giorno","categoria"])
-          merge_csv(DOCS / "kpi_mese_categoria.csv", align_to_existing_schema(DOCS / "kpi_mese_categoria.csv", kpi_mese_cat), ["mese","categoria"])
+          st_nodo_path = DOCS / "stazioni_mese_categoria_nodo.csv"
+          st_ruolo_path = DOCS / "stazioni_mese_categoria_ruolo.csv"
 
-          merge_csv(DOCS / "stazioni_mese_categoria_nodo.csv", align_to_existing_schema(DOCS / "stazioni_mese_categoria_nodo.csv", st_nodo), ["mese","categoria","cod_stazione"])
-          merge_csv(DOCS / "stazioni_mese_categoria_ruolo.csv", align_to_existing_schema(DOCS / "stazioni_mese_categoria_ruolo.csv", st_ruolo), ["mese","categoria","ruolo","cod_stazione"])
+          code_map = build_station_code_map(st_nodo_path)
+          if code_map:
+              st_nodo = st_nodo.copy()
+              st_ruolo = st_ruolo.copy()
+              st_nodo["cod_stazione"] = st_nodo["nome_stazione"].astype(str).map(code_map).fillna(st_nodo["cod_stazione_grezzo"].astype(str))
+              st_ruolo["cod_stazione"] = st_ruolo["nome_stazione"].astype(str).map(code_map).fillna(st_ruolo["cod_stazione_grezzo"].astype(str))
+          else:
+              st_nodo = st_nodo.copy()
+              st_ruolo = st_ruolo.copy()
+              st_nodo["cod_stazione"] = st_nodo["cod_stazione_grezzo"].astype(str)
+              st_ruolo["cod_stazione"] = st_ruolo["cod_stazione_grezzo"].astype(str)
 
-          merge_csv(DOCS / "od_mese_categoria.csv", align_to_existing_schema(DOCS / "od_mese_categoria.csv", od), ["mese","categoria","origine","destinazione"])
+          st_nodo = st_nodo.drop(columns=["cod_stazione_grezzo"], errors="ignore")
+          st_ruolo = st_ruolo.drop(columns=["cod_stazione_grezzo"], errors="ignore")
+
+          merge_csv_safe(DOCS / "kpi_giorno.csv", align_to_existing_schema(DOCS / "kpi_giorno.csv", kpi_giorno), ["giorno"])
+          merge_csv_safe(DOCS / "kpi_mese.csv", align_to_existing_schema(DOCS / "kpi_mese.csv", kpi_mese), ["mese"])
+          merge_csv_safe(DOCS / "kpi_giorno_categoria.csv", align_to_existing_schema(DOCS / "kpi_giorno_categoria.csv", kpi_giorno_cat), ["giorno","categoria"])
+          merge_csv_safe(DOCS / "kpi_mese_categoria.csv", align_to_existing_schema(DOCS / "kpi_mese_categoria.csv", kpi_mese_cat), ["mese","categoria"])
+
+          merge_csv_safe(st_nodo_path, align_to_existing_schema(st_nodo_path, st_nodo), ["mese","categoria","cod_stazione"])
+          merge_csv_safe(st_ruolo_path, align_to_existing_schema(st_ruolo_path, st_ruolo), ["mese","categoria","ruolo","cod_stazione"])
+
+          merge_csv_safe(DOCS / "od_mese_categoria.csv", align_to_existing_schema(DOCS / "od_mese_categoria.csv", od), ["mese","categoria","origine","destinazione"])
 
           (ROOT / "docs" / ".nojekyll").touch()
           print("updated docs/data")
