@@ -131,6 +131,22 @@ jobs:
                   return []
               return obj if isinstance(obj, list) else []
 
+          def normalize_fr(fr):
+              if not isinstance(fr, list):
+                  return []
+              out = []
+              for stop in fr:
+                  if not isinstance(stop, dict):
+                      continue
+                  out.append({
+                      "n": stop.get("n"),
+                      "ra": stop.get("ra"),
+                      "rp": stop.get("rp"),
+                      "oa": stop.get("oa"),
+                      "op": stop.get("op"),
+                  })
+              return out
+
           frames = []
           skipped = 0
           for _, row in df.iterrows():
@@ -139,12 +155,20 @@ jobs:
                   skipped += 1
                   continue
               tdf = pd.json_normalize(treni_list)
+
+              if "fr" in tdf.columns:
+                  tdf["fr"] = tdf["fr"].apply(normalize_fr)
+              else:
+                  tdf["fr"] = [[] for _ in range(len(tdf))]
+
               tdf["ref_day"] = row.get("ref_day")
               tdf["giorno"] = row.get("giorno")
               tdf["timezone"] = row.get("timezone")
+
               for c in df.columns:
                   if str(c).startswith("meta_"):
                       tdf[c] = row.get(c)
+
               frames.append(tdf)
 
           out = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
@@ -185,7 +209,7 @@ jobs:
           def merge_csv_safe(path: Path, new_df: pd.DataFrame, key_cols):
               for k in key_cols:
                   if k not in new_df.columns:
-                      raise KeyError(f"merge_csv: missing key col {k} for {path.name}. have={list(new_df.columns)[:60]}")
+                      raise KeyError(f"merge_csv: missing key col {k} for {path.name}. have={list(new_df.columns)[:80]}")
 
               if path.exists():
                   old = pd.read_csv(path)
@@ -226,6 +250,9 @@ jobs:
           con.execute("DROP VIEW IF EXISTS trains_all")
           con.execute(f"CREATE VIEW trains_all AS SELECT * FROM read_parquet('{trains_path.as_posix()}')")
 
+          print(con.execute("SELECT typeof(fr), typeof(list_extract(fr,1)) FROM trains_all WHERE fr IS NOT NULL LIMIT 1").fetchall())
+          print(con.execute("SELECT list_extract(fr,1) FROM trains_all WHERE fr IS NOT NULL LIMIT 1").fetchall())
+
           con.execute("DROP TABLE IF EXISTS trains_clean")
           con.execute("""
           CREATE TABLE trains_clean AS
@@ -254,7 +281,6 @@ jobs:
               mese,
               categoria,
               numero_treno,
-              ra_min AS ra_min_treno,
               fr,
               array_length(fr) AS max_idx
             FROM trains_clean
@@ -266,7 +292,6 @@ jobs:
               mese,
               categoria,
               numero_treno,
-              ra_min_treno,
               max_idx,
               UNNEST(range(1, max_idx + 1)) AS idx
             FROM base
@@ -279,7 +304,6 @@ jobs:
               base.numero_treno,
               idxs.idx,
               base.max_idx,
-              base.ra_min_treno,
               list_extract(base.fr, idxs.idx) AS stop
             FROM base
             JOIN idxs
@@ -301,7 +325,11 @@ jobs:
               WHEN idx = max_idx THEN 'ARRIVO'
               ELSE 'TRANSITO'
             END AS ruolo,
-            ra_min_treno AS ra_min
+            CASE
+              WHEN stop.ra IS NULL THEN NULL
+              WHEN lower(trim(CAST(stop.ra AS VARCHAR))) IN ('n','n.d.','nd','') THEN NULL
+              ELSE TRY_CAST(stop.ra AS DOUBLE)
+            END AS ra_min
           FROM s
           WHERE stop.n IS NOT NULL
           """)
@@ -488,14 +516,14 @@ jobs:
           st_ruolo_path = DOCS / "stazioni_mese_categoria_ruolo.csv"
 
           code_map = build_station_code_map(st_nodo_path)
+
+          st_nodo = st_nodo.copy()
+          st_ruolo = st_ruolo.copy()
+
           if code_map:
-              st_nodo = st_nodo.copy()
-              st_ruolo = st_ruolo.copy()
               st_nodo["cod_stazione"] = st_nodo["nome_stazione"].astype(str).map(code_map).fillna(st_nodo["cod_stazione_grezzo"].astype(str))
               st_ruolo["cod_stazione"] = st_ruolo["nome_stazione"].astype(str).map(code_map).fillna(st_ruolo["cod_stazione_grezzo"].astype(str))
           else:
-              st_nodo = st_nodo.copy()
-              st_ruolo = st_ruolo.copy()
               st_nodo["cod_stazione"] = st_nodo["cod_stazione_grezzo"].astype(str)
               st_ruolo["cod_stazione"] = st_ruolo["cod_stazione_grezzo"].astype(str)
 
