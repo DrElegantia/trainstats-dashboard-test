@@ -9,6 +9,12 @@ window.addEventListener("error", (e) => {
 window.addEventListener("unhandledrejection", (e) => {
   const r = e && e.reason ? e.reason : "";
   const msg = r && r.message ? r.message : String(r);
+
+  if (msg && msg.includes("verticalFillMode")) {
+    console.warn("Promise rejection Tabulator ignorata:", msg);
+    return;
+  }
+
   try {
     const el = document.getElementById("metaBox");
     if (el) el.innerText = "Promise rejection: " + msg;
@@ -186,9 +192,102 @@ function ensureSearchInput(selectEl, inputId, placeholder, items) {
   input.oninput = () => fillStationSelect(selectEl, items, input.value);
 }
 
+function safeSetData(table, data) {
+  if (!table || typeof table.setData !== "function") return;
+  try {
+    const p = table.setData(data);
+    if (p && typeof p.catch === "function") p.catch(() => {});
+  } catch {}
+}
+
 function isCapoluogoCity(cityName) {
   if (!state.capoluoghiSet || state.capoluoghiSet.size === 0) return true;
   return state.capoluoghiSet.has(normalizeText(cityName));
+}
+
+function ensureHistToggleStyles() {
+  if (document.getElementById("histToggleStyles")) return;
+
+  const style = document.createElement("style");
+  style.id = "histToggleStyles";
+  style.textContent = `
+    .histToggleWrap { display:flex; align-items:center; gap:10px; margin:0 0 8px 0; }
+    .histModeText { font-size:13px; color:#e6e9f2; opacity:0.65; user-select:none; }
+    .histModeText.active { opacity:1; font-weight:600; }
+    .histSwitch { position:relative; display:inline-block; width:44px; height:24px; }
+    .histSwitch input { opacity:0; width:0; height:0; }
+    .histSlider { position:absolute; cursor:pointer; inset:0; background:rgba(255,255,255,0.22); transition:0.18s; border-radius:24px; }
+    .histSlider:before { position:absolute; content:""; height:18px; width:18px; left:3px; top:3px; background:#ffffff; transition:0.18s; border-radius:50%; }
+    .histSwitch input:checked + .histSlider { background:rgba(255,255,255,0.38); }
+    .histSwitch input:checked + .histSlider:before { transform: translateX(20px); }
+  `;
+  document.head.appendChild(style);
+}
+
+function updateHistToggleUI() {
+  const t = document.getElementById("histModeToggle");
+  const left = document.getElementById("histModeTextCount");
+  const right = document.getElementById("histModeTextPct");
+  if (!t || !left || !right) return;
+
+  const pct = !!t.checked;
+  if (pct) {
+    left.classList.remove("active");
+    right.classList.add("active");
+  } else {
+    left.classList.add("active");
+    right.classList.remove("active");
+  }
+}
+
+function initHistModeToggle() {
+  const chart = document.getElementById("chartHist");
+  if (!chart) return;
+
+  ensureHistToggleStyles();
+
+  let t = document.getElementById("histModeToggle");
+  if (t) {
+    updateHistToggleUI();
+    t.onchange = () => { updateHistToggleUI(); renderHist(); };
+    return;
+  }
+
+  const wrap = document.createElement("div");
+  wrap.className = "histToggleWrap";
+
+  const left = document.createElement("span");
+  left.id = "histModeTextCount";
+  left.className = "histModeText active";
+  left.innerText = "Conteggi";
+
+  const right = document.createElement("span");
+  right.id = "histModeTextPct";
+  right.className = "histModeText";
+  right.innerText = "%";
+
+  const sw = document.createElement("label");
+  sw.className = "histSwitch";
+
+  t = document.createElement("input");
+  t.id = "histModeToggle";
+  t.type = "checkbox";
+  t.checked = false;
+
+  const slider = document.createElement("span");
+  slider.className = "histSlider";
+
+  sw.appendChild(t);
+  sw.appendChild(slider);
+
+  wrap.appendChild(left);
+  wrap.appendChild(sw);
+  wrap.appendChild(right);
+
+  const parent = chart.parentNode;
+  if (parent) parent.insertBefore(wrap, chart);
+
+  t.onchange = () => { updateHistToggleUI(); renderHist(); };
 }
 
 const state = {
@@ -303,7 +402,9 @@ async function loadAll() {
   initFilters();
   initMap();
   initTables();
-  renderAll();
+  initHistModeToggle();
+
+  requestAnimationFrame(() => renderAll());
 
   if (!foundAnyGold) {
     setMeta("Errore: non trovo i CSV in site/data. Controlla il deploy di GitHub Pages e che pubblichi la cartella site completa.");
@@ -355,6 +456,7 @@ function initFilters() {
       state.filters.cat = "all";
       state.filters.dep = "all";
       state.filters.arr = "all";
+
       if (yearSel) yearSel.value = "all";
       if (catSel) catSel.value = "all";
       if (depSel) depSel.value = "all";
@@ -532,6 +634,9 @@ function renderHist() {
     ? state.manifest.delay_buckets_minutes.labels
     : [];
 
+  const t = document.getElementById("histModeToggle");
+  const mode = t && t.checked ? "pct" : "count";
+
   if (!labels.length) {
     Plotly.newPlot("chartHist", [{ x: [], y: [], type: "bar" }], {
       margin: { t: 10, l: 40, r: 20, b: 60 },
@@ -552,15 +657,23 @@ function renderHist() {
   });
 
   const x = labels;
-  const y = labels.map(l => byBucket.get(l) || 0);
+  const counts = labels.map(l => byBucket.get(l) || 0);
+  const total = counts.reduce((a, b) => a + b, 0);
 
-  Plotly.newPlot("chartHist", [{ x, y, name: "Conteggio", type: "bar" }], {
+  const y = mode === "pct"
+    ? counts.map(v => total > 0 ? (v / total) * 100 : 0)
+    : counts;
+
+  const yTitle = mode === "pct" ? "Percentuale" : "Conteggio";
+  const ySuffix = mode === "pct" ? "%" : "";
+
+  Plotly.newPlot("chartHist", [{ x, y, name: mode === "pct" ? "Percentuale" : "Conteggio", type: "bar" }], {
     margin: { t: 10, l: 40, r: 20, b: 90 },
     paper_bgcolor: "rgba(0,0,0,0)",
     plot_bgcolor: "rgba(0,0,0,0)",
     font: { color: "#e6e9f2" },
     xaxis: { tickangle: -35, gridcolor: "rgba(255,255,255,0.08)" },
-    yaxis: { gridcolor: "rgba(255,255,255,0.08)" }
+    yaxis: { title: yTitle, ticksuffix: ySuffix, gridcolor: "rgba(255,255,255,0.08)" }
   }, { displayModeBar: false });
 }
 
@@ -647,7 +760,7 @@ function renderTables() {
       return { ...r, pct_ritardo: pct };
     }).filter(r => toNum(r.corse_osservate) >= minN);
 
-    state.tables.stations.setData(st);
+    safeSetData(state.tables.stations, st);
   }
 
   if (state.tables.od) {
@@ -664,7 +777,7 @@ function renderTables() {
       return { ...r, pct_ritardo: pct };
     }).filter(r => toNum(r.corse_osservate) >= minN);
 
-    state.tables.od.setData(od);
+    safeSetData(state.tables.od, od);
   }
 }
 
@@ -758,7 +871,7 @@ function renderMap() {
   });
 
   const note = missingCoords > 0
-    ? "Alcune stazioni non hanno coordinate e non sono disegnate sulla mappa. Completa stations_dim.csv oppure genera un file unknown."
+    ? "Alcune stazioni non hanno coordinate e non sono disegnate sulla mappa. Completa stations_dim.csv o il file sorgente coordinate."
     : "Coordinate stazioni complete per il set filtrato.";
   const noteEl = document.getElementById("mapNote");
   if (noteEl) noteEl.innerText = note;
@@ -770,7 +883,8 @@ function renderCities() {
   const minN = state.manifest && state.manifest.min_counts ? toNum(state.manifest.min_counts.leaderboard_min_trains) : 20;
   const metricSel = document.getElementById("mapMetricSel");
   let metric = metricSel ? metricSel.value : "pct_ritardo";
-  if (!["pct_ritardo","in_ritardo","minuti_ritardo_tot","cancellate","soppresse"].includes(metric)) metric = "pct_ritardo";
+  const allowed = ["pct_ritardo","in_ritardo","minuti_ritardo_tot","cancellate","soppresse"];
+  if (!allowed.includes(metric)) metric = "pct_ritardo";
 
   let mode = "network";
   if (state.filters.dep !== "all" && state.filters.arr === "all") mode = "from_dep_rank_arr_city";
@@ -780,12 +894,12 @@ function renderCities() {
   const noteEl = document.getElementById("citiesNote");
   if (noteEl) {
     noteEl.innerText = state.capoluoghiSet && state.capoluoghiSet.size === 0
-      ? "Non trovo capoluoghi_provincia.csv, la classifica include tutte le città presenti."
+      ? "capoluoghi_provincia.csv non trovato, classifica su tutte le città presenti nei dati."
       : "Classifica limitata ai capoluoghi di provincia.";
   }
 
   if (mode === "pair") {
-    state.tables.cities.setData([]);
+    safeSetData(state.tables.cities, []);
     return;
   }
 
@@ -863,7 +977,7 @@ function renderCities() {
   out.sort((a, b) => toNum(b[metric]) - toNum(a[metric]));
   out = out.slice(0, 50);
 
-  state.tables.cities.setData(out);
+  safeSetData(state.tables.cities, out);
   try {
     state.tables.cities.setSort(metric, "desc");
   } catch {}
