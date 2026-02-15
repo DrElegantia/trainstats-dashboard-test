@@ -140,10 +140,10 @@ jobs:
                       continue
                   out.append({
                       "n": stop.get("n"),
-                      "ra": stop.get("ra"),
-                      "rp": stop.get("rp"),
                       "oa": stop.get("oa"),
                       "op": stop.get("op"),
+                      "ra": stop.get("ra"),
+                      "rp": stop.get("rp"),
                   })
               return out
 
@@ -164,7 +164,6 @@ jobs:
               tdf["ref_day"] = row.get("ref_day")
               tdf["giorno"] = row.get("giorno")
               tdf["timezone"] = row.get("timezone")
-
               for c in df.columns:
                   if str(c).startswith("meta_"):
                       tdf[c] = row.get(c)
@@ -209,7 +208,7 @@ jobs:
           def merge_csv_safe(path: Path, new_df: pd.DataFrame, key_cols):
               for k in key_cols:
                   if k not in new_df.columns:
-                      raise KeyError(f"merge_csv: missing key col {k} for {path.name}. have={list(new_df.columns)[:80]}")
+                      raise KeyError(f"merge_csv: missing key col {k} for {path.name}. have={list(new_df.columns)[:120]}")
 
               if path.exists():
                   old = pd.read_csv(path)
@@ -238,12 +237,24 @@ jobs:
           def build_station_code_map(stazioni_path: Path):
               if not stazioni_path.exists():
                   return {}
-              old = pd.read_csv(stazioni_path)
+              old = pd.read_csv(stazioni_path, dtype=str)
               if "nome_stazione" in old.columns and "cod_stazione" in old.columns:
-                  sub = old[["nome_stazione", "cod_stazione"]].dropna()
-                  sub = sub.drop_duplicates()
-                  return dict(zip(sub["nome_stazione"].astype(str), sub["cod_stazione"].astype(str)))
+                  sub = old[["nome_stazione", "cod_stazione"]].dropna().drop_duplicates()
+                  return dict(zip(sub["nome_stazione"], sub["cod_stazione"]))
               return {}
+
+          def build_od_code_maps(od_path: Path):
+              if not od_path.exists():
+                  return {}, {}
+              old = pd.read_csv(od_path, dtype=str)
+              mp, ma = {}, {}
+              if "nome_partenza" in old.columns and "cod_partenza" in old.columns:
+                  sub = old[["nome_partenza", "cod_partenza"]].dropna().drop_duplicates()
+                  mp = dict(zip(sub["nome_partenza"], sub["cod_partenza"]))
+              if "nome_arrivo" in old.columns and "cod_arrivo" in old.columns:
+                  sub = old[["nome_arrivo", "cod_arrivo"]].dropna().drop_duplicates()
+                  ma = dict(zip(sub["nome_arrivo"], sub["cod_arrivo"]))
+              return mp, ma
 
           con = duckdb.connect()
           con.execute("PRAGMA threads=4")
@@ -499,8 +510,8 @@ jobs:
           SELECT
             mese,
             categoria,
-            origine,
-            destinazione,
+            origine AS nome_partenza,
+            destinazione AS nome_arrivo,
             COUNT(*) AS corse_osservate,
             COUNT(ra_min) AS effettuate,
             AVG(ra_min) AS ritardo_medio,
@@ -514,21 +525,24 @@ jobs:
 
           st_nodo_path = DOCS / "stazioni_mese_categoria_nodo.csv"
           st_ruolo_path = DOCS / "stazioni_mese_categoria_ruolo.csv"
+          od_path = DOCS / "od_mese_categoria.csv"
 
           code_map = build_station_code_map(st_nodo_path)
-
           st_nodo = st_nodo.copy()
           st_ruolo = st_ruolo.copy()
-
           if code_map:
               st_nodo["cod_stazione"] = st_nodo["nome_stazione"].astype(str).map(code_map).fillna(st_nodo["cod_stazione_grezzo"].astype(str))
               st_ruolo["cod_stazione"] = st_ruolo["nome_stazione"].astype(str).map(code_map).fillna(st_ruolo["cod_stazione_grezzo"].astype(str))
           else:
               st_nodo["cod_stazione"] = st_nodo["cod_stazione_grezzo"].astype(str)
               st_ruolo["cod_stazione"] = st_ruolo["cod_stazione_grezzo"].astype(str)
-
           st_nodo = st_nodo.drop(columns=["cod_stazione_grezzo"], errors="ignore")
           st_ruolo = st_ruolo.drop(columns=["cod_stazione_grezzo"], errors="ignore")
+
+          mp, ma = build_od_code_maps(od_path)
+          od = od.copy()
+          od["cod_partenza"] = od["nome_partenza"].astype(str).map(mp).fillna(od["nome_partenza"].astype(str))
+          od["cod_arrivo"] = od["nome_arrivo"].astype(str).map(ma).fillna(od["nome_arrivo"].astype(str))
 
           merge_csv_safe(DOCS / "kpi_giorno.csv", align_to_existing_schema(DOCS / "kpi_giorno.csv", kpi_giorno), ["giorno"])
           merge_csv_safe(DOCS / "kpi_mese.csv", align_to_existing_schema(DOCS / "kpi_mese.csv", kpi_mese), ["mese"])
@@ -538,7 +552,7 @@ jobs:
           merge_csv_safe(st_nodo_path, align_to_existing_schema(st_nodo_path, st_nodo), ["mese","categoria","cod_stazione"])
           merge_csv_safe(st_ruolo_path, align_to_existing_schema(st_ruolo_path, st_ruolo), ["mese","categoria","ruolo","cod_stazione"])
 
-          merge_csv_safe(DOCS / "od_mese_categoria.csv", align_to_existing_schema(DOCS / "od_mese_categoria.csv", od), ["mese","categoria","origine","destinazione"])
+          merge_csv_safe(od_path, align_to_existing_schema(od_path, od), ["mese","categoria","cod_partenza","cod_arrivo"])
 
           (ROOT / "docs" / ".nojekyll").touch()
           print("updated docs/data")
