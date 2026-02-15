@@ -385,7 +385,7 @@ jobs:
             SUM(CASE WHEN ra_min IS NULL THEN 1 ELSE 0 END) AS info_mancante,
             SUM(CASE WHEN ra_min IS NOT NULL AND ra_min = 0 THEN 1 ELSE 0 END) AS in_orario,
             SUM(CASE WHEN ra_min IS NOT NULL AND ra_min > 0 THEN 1 ELSE 0 END) AS in_ritardo,
-            SUM(CASE WHEN ra_min IS NOT NULL AND ra_min < 0 END) AS in_anticipo,
+            SUM(CASE WHEN ra_min IS NOT NULL AND ra_min < 0 THEN 1 ELSE 0 END) AS in_anticipo,
             SUM(CASE WHEN ra_min > 5 THEN 1 ELSE 0 END) AS oltre_5,
             SUM(CASE WHEN ra_min > 10 THEN 1 ELSE 0 END) AS oltre_10,
             SUM(CASE WHEN ra_min > 15 THEN 1 ELSE 0 END) AS oltre_15,
@@ -469,8 +469,7 @@ jobs:
           merge_csv(DOCS / "stazioni_mese_categoria_nodo.csv", align_to_existing_schema(DOCS / "stazioni_mese_categoria_nodo.csv", st_nodo), ["mese","categoria","stazione"])
           merge_csv(DOCS / "stazioni_mese_categoria_ruolo.csv", align_to_existing_schema(DOCS / "stazioni_mese_categoria_ruolo.csv", st_ruolo), ["mese","categoria","ruolo","stazione"])
 
-          if (DOCS / "od_mese_categoria.csv").exists():
-              merge_csv(DOCS / "od_mese_categoria.csv", align_to_existing_schema(DOCS / "od_mese_categoria.csv", od), ["mese","categoria","origine","destinazione"])
+          merge_csv(DOCS / "od_mese_categoria.csv", align_to_existing_schema(DOCS / "od_mese_categoria.csv", od), ["mese","categoria","origine","destinazione"])
 
           (ROOT / "docs" / ".nojekyll").touch()
           print("updated docs/data")
