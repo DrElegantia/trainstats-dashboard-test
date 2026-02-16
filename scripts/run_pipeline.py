@@ -1,10 +1,10 @@
-# run_pipeline.py
+# scripts/run_pipeline.py
 from __future__ import annotations
 
 import subprocess
 import sys
 from datetime import date, timedelta
-from typing import Optional
+from typing import Optional, Set
 
 from .utils import load_yaml, today_in_tz
 
@@ -16,6 +16,19 @@ def call(cmd: list[str]) -> None:
         raise SystemExit(r.returncode)
 
 
+def month_keys_between(d0: date, d1: date) -> list[str]:
+    out: Set[str] = set()
+    cur = date(d0.year, d0.month, 1)
+    end = date(d1.year, d1.month, 1)
+    while cur <= end:
+        out.add(f"{cur.year:04d}{cur.month:02d}")
+        if cur.month == 12:
+            cur = date(cur.year + 1, 1, 1)
+        else:
+            cur = date(cur.year, cur.month + 1, 1)
+    return sorted(out)
+
+
 def run(start: date, end: date) -> None:
     s = start.isoformat()
     e = end.isoformat()
@@ -23,10 +36,10 @@ def run(start: date, end: date) -> None:
     call([sys.executable, "-m", "scripts.ingest", "--start", s, "--end", e])
     call([sys.executable, "-m", "scripts.transform_silver", "--start", s, "--end", e])
 
-    call([sys.executable, "-m", "scripts.build_gold"])
+    months = month_keys_between(start, end)
+    call([sys.executable, "-m", "scripts.build_gold", "--months", *months])
 
     call([sys.executable, "-m", "scripts.build_station_dim"])
-
     call([sys.executable, "-m", "scripts.build_site"])
 
 
