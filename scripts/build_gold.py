@@ -132,4 +132,242 @@ def build_metrics(cfg: Dict[str, Any], df: pd.DataFrame) -> pd.DataFrame:
     df["minuti_anticipo"] = (-df["ritardo_arrivo_min"]).clip(lower=0)
     df["minuti_netti"] = df["minuti_ritardo"].fillna(0) - df["minuti_anticipo"].fillna(0)
 
-    edges = cfg["delay_buckets_minutes"]["ed]()
+    edges = cfg["delay_buckets_minutes"]["edges"]
+    labels = cfg["delay_buckets_minutes"]["labels"]
+
+    def buck(x):
+        if pd.isna(x):
+            return "missing"
+        try:
+            return bucketize_delay(int(x), edges, labels)
+        except Exception:
+            return "missing"
+
+    df["bucket_ritardo_arrivo"] = df["ritardo_arrivo_min"].apply(buck)
+
+    return df
+
+
+def agg_core(group_cols: List[str], df: pd.DataFrame) -> pd.DataFrame:
+    def q90(x: pd.Series) -> float:
+        x = x.dropna()
+        if len(x) == 0:
+            return float("nan")
+        return float(x.quantile(0.9))
+
+    def q95(x: pd.Series) -> float:
+        x = x.dropna()
+        if len(x) == 0:
+            return float("nan")
+        return float(x.quantile(0.95))
+
+    g = df.groupby(group_cols, dropna=False)
+
+    out = g.agg(
+        corse_osservate=("_obs_id", "count"),
+        effettuate=("stato_corsa", lambda s: int((pd.Series(s) == "effettuato").sum())),
+        cancellate=("stato_corsa", lambda s: int((pd.Series(s) == "cancellato").sum())),
+        soppresse=("stato_corsa", lambda s: int((pd.Series(s) == "soppresso").sum())),
+        parzialmente_cancellate=("stato_corsa", lambda s: int((pd.Series(s) == "parzialmente_cancellato").sum())),
+        info_mancante=("info_mancante", lambda s: int(pd.Series(s).fillna(False).astype(bool).sum())),
+        in_orario=("arrivo_in_orario", lambda s: int(pd.Series(s).fillna(False).astype(bool).sum())),
+        in_ritardo=("arrivo_in_ritardo", lambda s: int(pd.Series(s).fillna(False).astype(bool).sum())),
+        in_anticipo=("arrivo_in_anticipo", lambda s: int(pd.Series(s).fillna(False).astype(bool).sum())),
+        oltre_5=("oltre_5", lambda s: int(pd.Series(s).fillna(False).astype(bool).sum())),
+        oltre_10=("oltre_10", lambda s: int(pd.Series(s).fillna(False).astype(bool).sum())),
+        oltre_15=("oltre_15", lambda s: int(pd.Series(s).fillna(False).astype(bool).sum())),
+        oltre_30=("oltre_30", lambda s: int(pd.Series(s).fillna(False).astype(bool).sum())),
+        oltre_60=("oltre_60", lambda s: int(pd.Series(s).fillna(False).astype(bool).sum())),
+        minuti_ritardo_tot=("minuti_ritardo", "sum"),
+        minuti_anticipo_tot=("minuti_anticipo", "sum"),
+        minuti_netti_tot=("minuti_netti", "sum"),
+        ritardo_medio=("ritardo_arrivo_min", "mean"),
+        ritardo_mediano=("ritardo_arrivo_min", "median"),
+        p90=("ritardo_arrivo_min", q90),
+        p95=("ritardo_arrivo_min", q95),
+    ).reset_index()
+
+    return out
+
+
+def build_gold_tables(cfg: Dict[str, Any], df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
+    out: Dict[str, pd.DataFrame] = {}
+
+    out["kpi_giorno_categoria"] = agg_core(["giorno", "categoria"], df)
+    out["kpi_mese_categoria"] = agg_core(["mese", "categoria"], df)
+    out["kpi_giorno"] = agg_core(["giorno"], df)
+    out["kpi_mese"] = agg_core(["mese"], df)
+
+    h_m = df.groupby(["mese", "categoria", "bucket_ritardo_arrivo"], dropna=False).agg(
+        count=("_obs_id", "count"),
+        minuti_ritardo=("minuti_ritardo", "sum"),
+        minuti_anticipo=("minuti_anticipo", "sum"),
+    ).reset_index()
+    out["hist_mese_categoria"] = h_m
+
+    h_d = df.groupby(["giorno", "categoria", "bucket_ritardo_arrivo"], dropna=False).agg(
+        count=("_obs_id", "count"),
+        minuti_ritardo=("minuti_ritardo", "sum"),
+        minuti_anticipo=("minuti_anticipo", "sum"),
+    ).reset_index()
+    out["hist_giorno_categoria"] = h_d
+
+    part_names = df.dropna(subset=["cod_partenza"]).drop_duplicates("cod_partenza").set_index("cod_partenza")["nome_partenza"]
+    arr_names = df.dropna(subset=["cod_arrivo"]).drop_duplicates("cod_arrivo").set_index("cod_arrivo")["nome_arrivo"]
+
+    od_m = agg_core(["mese", "categoria", "cod_partenza", "cod_arrivo"], df)
+    od_m["nome_partenza"] = od_m["cod_partenza"].map(part_names).fillna("")
+    od_m["nome_arrivo"] = od_m["cod_arrivo"].map(arr_names).fillna("")
+    out["od_mese_categoria"] = od_m
+
+    od_d = agg_core(["giorno", "categoria", "cod_partenza", "cod_arrivo"], df)
+    od_d["nome_partenza"] = od_d["cod_partenza"].map(part_names).fillna("")
+    od_d["nome_arrivo"] = od_d["cod_arrivo"].map(arr_names).fillna("")
+    out["od_giorno_categoria"] = od_d
+
+    dep_src = df.rename(columns={"cod_partenza": "cod_stazione"})
+    arr_src = df.rename(columns={"cod_arrivo": "cod_stazione"})
+
+    dep_m = agg_core(["mese", "categoria", "cod_stazione"], dep_src)
+    dep_m["ruolo"] = "partenza"
+    dep_m["nome_stazione"] = dep_m["cod_stazione"].map(part_names).fillna("")
+
+    arr_m = agg_core(["mese", "categoria", "cod_stazione"], arr_src)
+    arr_m["ruolo"] = "arrivo"
+    arr_m["nome_stazione"] = arr_m["cod_stazione"].map(arr_names).fillna("")
+
+    combined_m = pd.concat([dep_m, arr_m], ignore_index=True)
+    out["stazioni_mese_categoria_ruolo"] = combined_m
+
+    comb2_m = combined_m.groupby(["mese", "categoria", "cod_stazione"], dropna=False).agg(
+        corse_osservate=("corse_osservate", "sum"),
+        effettuate=("effettuate", "sum"),
+        cancellate=("cancellate", "sum"),
+        soppresse=("soppresse", "sum"),
+        parzialmente_cancellate=("parzialmente_cancellate", "sum"),
+        info_mancante=("info_mancante", "sum"),
+        in_orario=("in_orario", "sum"),
+        in_ritardo=("in_ritardo", "sum"),
+        in_anticipo=("in_anticipo", "sum"),
+        oltre_5=("oltre_5", "sum"),
+        oltre_10=("oltre_10", "sum"),
+        oltre_15=("oltre_15", "sum"),
+        oltre_30=("oltre_30", "sum"),
+        oltre_60=("oltre_60", "sum"),
+        minuti_ritardo_tot=("minuti_ritardo_tot", "sum"),
+        minuti_anticipo_tot=("minuti_anticipo_tot", "sum"),
+        minuti_netti_tot=("minuti_netti_tot", "sum"),
+        ritardo_medio=("ritardo_medio", "mean"),
+        ritardo_mediano=("ritardo_mediano", "median"),
+        p90=("p90", "mean"),
+        p95=("p95", "mean"),
+    ).reset_index()
+    comb2_m["ruolo"] = "nodo"
+
+    name_any_m = combined_m.dropna(subset=["cod_stazione"]).drop_duplicates("cod_stazione").set_index("cod_stazione")["nome_stazione"]
+    comb2_m["nome_stazione"] = comb2_m["cod_stazione"].map(name_any_m).fillna("")
+    out["stazioni_mese_categoria_nodo"] = comb2_m
+
+    dep_d = agg_core(["giorno", "categoria", "cod_stazione"], dep_src)
+    dep_d["ruolo"] = "partenza"
+    dep_d["nome_stazione"] = dep_d["cod_stazione"].map(part_names).fillna("")
+
+    arr_d = agg_core(["giorno", "categoria", "cod_stazione"], arr_src)
+    arr_d["ruolo"] = "arrivo"
+    arr_d["nome_stazione"] = arr_d["cod_stazione"].map(arr_names).fillna("")
+
+    combined_d = pd.concat([dep_d, arr_d], ignore_index=True)
+    out["stazioni_giorno_categoria_ruolo"] = combined_d
+
+    comb2_d = combined_d.groupby(["giorno", "categoria", "cod_stazione"], dropna=False).agg(
+        corse_osservate=("corse_osservate", "sum"),
+        effettuate=("effettuate", "sum"),
+        cancellate=("cancellate", "sum"),
+        soppresse=("soppresse", "sum"),
+        parzialmente_cancellate=("parzialmente_cancellate", "sum"),
+        info_mancante=("info_mancante", "sum"),
+        in_orario=("in_orario", "sum"),
+        in_ritardo=("in_ritardo", "sum"),
+        in_anticipo=("in_anticipo", "sum"),
+        oltre_5=("oltre_5", "sum"),
+        oltre_10=("oltre_10", "sum"),
+        oltre_15=("oltre_15", "sum"),
+        oltre_30=("oltre_30", "sum"),
+        oltre_60=("oltre_60", "sum"),
+        minuti_ritardo_tot=("minuti_ritardo_tot", "sum"),
+        minuti_anticipo_tot=("minuti_anticipo_tot", "sum"),
+        minuti_netti_tot=("minuti_netti_tot", "sum"),
+        ritardo_medio=("ritardo_medio", "mean"),
+        ritardo_mediano=("ritardo_mediano", "median"),
+        p90=("p90", "mean"),
+        p95=("p95", "mean"),
+    ).reset_index()
+    comb2_d["ruolo"] = "nodo"
+
+    name_any_d = combined_d.dropna(subset=["cod_stazione"]).drop_duplicates("cod_stazione").set_index("cod_stazione")["nome_stazione"]
+    comb2_d["nome_stazione"] = comb2_d["cod_stazione"].map(name_any_d).fillna("")
+    out["stazioni_giorno_categoria_nodo"] = comb2_d
+
+    return out
+
+
+def gold_keys() -> Dict[str, List[str]]:
+    return {
+        "kpi_giorno_categoria": ["giorno", "categoria"],
+        "kpi_mese_categoria": ["mese", "categoria"],
+        "kpi_giorno": ["giorno"],
+        "kpi_mese": ["mese"],
+        "hist_mese_categoria": ["mese", "categoria", "bucket_ritardo_arrivo"],
+        "hist_giorno_categoria": ["giorno", "categoria", "bucket_ritardo_arrivo"],
+        "od_mese_categoria": ["mese", "categoria", "cod_partenza", "cod_arrivo"],
+        "od_giorno_categoria": ["giorno", "categoria", "cod_partenza", "cod_arrivo"],
+        "stazioni_mese_categoria_ruolo": ["mese", "categoria", "cod_stazione", "ruolo"],
+        "stazioni_mese_categoria_nodo": ["mese", "categoria", "cod_stazione", "ruolo"],
+        "stazioni_giorno_categoria_ruolo": ["giorno", "categoria", "cod_stazione", "ruolo"],
+        "stazioni_giorno_categoria_nodo": ["giorno", "categoria", "cod_stazione", "ruolo"],
+    }
+
+
+def save_gold_tables(tables: Dict[str, pd.DataFrame]) -> None:
+    out_dir = os.path.join("data", "gold")
+    ensure_dir(out_dir)
+
+    keys = gold_keys()
+
+    for name, df_new in tables.items():
+        path = os.path.join(out_dir, f"{name}.csv")
+
+        if os.path.exists(path):
+            df_old = pd.read_csv(path, dtype=str)
+            merged = pd.concat([df_old, df_new], ignore_index=True)
+        else:
+            merged = df_new.copy()
+
+        k = keys.get(name)
+        if k:
+            miss = [c for c in k if c not in merged.columns]
+            if miss:
+                raise RuntimeError(f"gold table {name} missing key columns {miss}")
+            merged = merged.drop_duplicates(subset=k, keep="last").sort_values(k)
+
+        merged.to_csv(path, index=False)
+
+
+def main() -> None:
+    cfg = load_yaml("config/pipeline.yml")
+
+    silver_files = list_silver_months()
+    if not silver_files:
+        raise ValueError("no silver parquet found")
+
+    df = pd.concat([pd.read_parquet(p) for p in silver_files], ignore_index=True)
+
+    dfm = build_metrics(cfg, df)
+    tables = build_gold_tables(cfg, dfm)
+    save_gold_tables(tables)
+
+    print({"gold_tables": sorted(list(tables.keys()))})
+
+
+if __name__ == "__main__":
+    main()
