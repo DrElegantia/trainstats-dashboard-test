@@ -676,7 +676,7 @@ function initDayWeekTimeControls() {
   dayWrap.appendChild(to);
 
   const wdLab = document.createElement("div");
-  wdLab.innerText = "Giorni";
+  wdLab.innerText = "";
 
   const wdWrap = document.createElement("div");
   wdWrap.id = "weekdayWrap";
