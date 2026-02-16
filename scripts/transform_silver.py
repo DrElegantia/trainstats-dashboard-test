@@ -91,12 +91,12 @@ def _missing_station_code(v: Any) -> bool:
     return s == "" or s.lower() in {"nan", "none", "null"}
 
 
-def _code_from_station_name(name: Any, role: str) -> str:
+def _code_from_station_name(name: Any) -> str:
     n = normalize_station_name(name)
     if not n:
         return ""
     digest = hashlib.sha1(n.encode("utf-8")).hexdigest()[:12].upper()
-    return f"N_{role}_{digest}"
+    return f"N_{digest}"
 
 
 def normalize_bronze_schema(df: pd.DataFrame) -> pd.DataFrame:
@@ -244,8 +244,8 @@ def transform(cfg: Dict[str, Any], df: pd.DataFrame) -> pd.DataFrame:
     # stabile dal nome per mantenere le aggregazioni station-level in gold/stations_dim.
     miss_dep = df["cod_partenza"].map(_missing_station_code)
     miss_arr = df["cod_arrivo"].map(_missing_station_code)
-    df.loc[miss_dep, "cod_partenza"] = df.loc[miss_dep, "nome_partenza"].map(lambda x: _code_from_station_name(x, "DEP"))
-    df.loc[miss_arr, "cod_arrivo"] = df.loc[miss_arr, "nome_arrivo"].map(lambda x: _code_from_station_name(x, "ARR"))
+    df.loc[miss_dep, "cod_partenza"] = df.loc[miss_dep, "nome_partenza"].map(_code_from_station_name)
+    df.loc[miss_arr, "cod_arrivo"] = df.loc[miss_arr, "nome_arrivo"].map(_code_from_station_name)
 
     df["ritardo_partenza_min"] = df.get("ritardo_partenza_raw", "").map(safe_int)
     df["ritardo_arrivo_min"] = df.get("ritardo_arrivo_raw", "").map(safe_int)
