@@ -321,4 +321,82 @@ def gold_keys() -> Dict[str, List[str]]:
         "kpi_giorno": ["giorno"],
         "kpi_mese": ["mese"],
         "hist_mese_categoria": ["mese", "categoria", "bucket_ritardo_arrivo"],
-        "hist_giorno_categoria": ["giorno", "categoria", "bucket_ritardo_arrivo"]
+        "hist_giorno_categoria": ["giorno", "categoria", "bucket_ritardo_arrivo"],
+        "od_mese_categoria": ["mese", "categoria", "cod_partenza", "cod_arrivo"],
+        "od_giorno_categoria": ["giorno", "categoria", "cod_partenza", "cod_arrivo"],
+        "stazioni_mese_categoria_ruolo": ["mese", "categoria", "cod_stazione", "ruolo"],
+        "stazioni_mese_categoria_nodo": ["mese", "categoria", "cod_stazione", "ruolo"],
+        "stazioni_giorno_categoria_ruolo": ["giorno", "categoria", "cod_stazione", "ruolo"],
+        "stazioni_giorno_categoria_nodo": ["giorno", "categoria", "cod_stazione", "ruolo"],
+    }
+
+
+def save_gold_tables(tables: Dict[str, pd.DataFrame]) -> None:
+    out_dir = os.path.join("data", "gold")
+    ensure_dir(out_dir)
+
+    keys = gold_keys()
+
+    for name, df_new in tables.items():
+        path = os.path.join(out_dir, f"{name}.csv")
+
+        if os.path.exists(path):
+            df_old = pd.read_csv(path)
+            merged = pd.concat([df_old, df_new], ignore_index=True)
+        else:
+            merged = df_new.copy()
+
+        k = keys.get(name)
+        if k:
+            miss = [c for c in k if c not in merged.columns]
+            if miss:
+                raise RuntimeError(f"gold table {name} missing key columns {miss}")
+            merged = merged.drop_duplicates(subset=k, keep="last").sort_values(k)
+
+        merged.to_csv(path, index=False)
+
+
+def _month_keys_between(d0: date, d1: date) -> List[str]:
+    out: Set[str] = set()
+    cur = date(d0.year, d0.month, 1)
+    end = date(d1.year, d1.month, 1)
+    while cur <= end:
+        out.add(f"{cur.year:04d}{cur.month:02d}")
+        if cur.month == 12:
+            cur = date(cur.year + 1, 1, 1)
+        else:
+            cur = date(cur.year, cur.month + 1, 1)
+    return sorted(out)
+
+
+def main(months: Optional[List[str]] = None) -> None:
+    cfg = load_yaml("config/pipeline.yml")
+
+    df = load_silver(months)
+    if df.empty:
+        print("no silver found, will not build gold")
+        return
+
+    dfm = build_metrics(cfg, df)
+    tables = build_gold(cfg, dfm)
+    save_gold_tables(tables)
+
+    print({"gold_tables": sorted(list(tables.keys())), "months_used": months or "ALL"})
+
+
+if __name__ == "__main__":
+    import argparse
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--months", nargs="*", required=False, help="YYYYMM list. If omitted, rebuilds all history.")
+    ap.add_argument("--start", required=False, help="YYYY-MM-DD (optional shortcut to derive months)")
+    ap.add_argument("--end", required=False, help="YYYY-MM-DD (optional shortcut to derive months)")
+    args = ap.parse_args()
+
+    months_arg: Optional[List[str]] = args.months if args.months else None
+    if (not months_arg) and args.start:
+        d0 = date.fromisoformat(args.start)
+        d1 = date.fromisoformat(args.end) if args.end else d0
+        months_arg = _month_keys_between(d0, d1)
+
+    main(months_arg)
