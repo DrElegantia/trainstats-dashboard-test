@@ -1,4 +1,0 @@
-giorno,corse_osservate,effettuate,cancellate,soppresse,parzialmente_cancellate,info_mancante,in_orario,in_ritardo,in_anticipo,oltre_5,oltre_10,oltre_15,oltre_30,oltre_60,minuti_ritardo_tot,minuti_anticipo_tot,minuti_netti_tot,ritardo_medio,ritardo_mediano,p90,p95,cancellate_tot
-2026-02-13,121,118,2,0,1,0,42,23,56,23,11,6,3,0,416,182,234,1.9338842975206607,0.0,9.0,14.0,3
-2026-02-14,127,126,1,0,0,0,57,15,55,15,9,6,2,0,348,220,128,1.0078740157480315,0.0,5.0,13.699999999999989,1
-2026-02-15,5792,5722,41,27,2,0,2364,672,2756,672,230,125,45,6,11221,7894,3327,0.5744129834254144,0.0,5.0,8.0,43
