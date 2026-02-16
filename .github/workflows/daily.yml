@@ -68,19 +68,30 @@ jobs:
             python -m scripts.run_pipeline
           fi
 
+      - name: Build station dimension with coordinates
+        run: |
+          echo "Building station dimension with geocoding..."
+          python -m scripts.build_station_dim
+
       - name: Verify output files
         run: |
           echo "=== Checking data/gold ==="
           ls -lah data/gold/ || echo "data/gold not found"
           
-          echo "=== Checking docs/data ==="
-          ls -lah docs/data/ || echo "docs/data not found"
+          echo "=== Checking stations cache ==="
+          ls -lah stations/stations.csv || echo "stations/stations.csv not found (first run)"
           
-          echo "=== Gold CSV files ==="
-          find data/gold -name "*.csv" -type f || true
+          echo "=== stations_dim.csv preview ==="
+          head -20 data/gold/stations_dim.csv || true
           
-          echo "=== Docs data files ==="
-          find docs/data -name "*.csv" -type f || true
+          echo "=== Stations with coordinates ==="
+          python -c "
+          import pandas as pd
+          df = pd.read_csv('data/gold/stations_dim.csv')
+          total = len(df)
+          with_coords = df['lat'].notna().sum()
+          print(f'Total: {total}, With coords: {with_coords}, Missing: {total - with_coords}')
+          " || true
 
       - name: Update stations unknown list (optional)
         run: |
@@ -93,7 +104,7 @@ jobs:
           git config user.name "github-actions"
           git config user.email "github-actions@users.noreply.github.com"
 
-          git add data/ docs/ || true
+          git add data/ docs/ stations/ || true
 
           if git diff --cached --quiet; then
             echo "No changes to commit"
