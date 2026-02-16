@@ -1,79 +1,83 @@
+# scripts/build_site.py
 from __future__ import annotations
 
-import os
-import glob
 import json
+import shutil
 from datetime import datetime, timezone
-from typing import Any, Dict, List
-
-from .utils import ensure_dir, load_yaml
+from pathlib import Path
 
 
-GOLD_DIR = os.path.join("data", "gold")
-SITE_DATA_DIR = os.path.join("site", "data")
+def ensure_dir(p: Path) -> None:
+    p.mkdir(parents=True, exist_ok=True)
 
 
-def _list_gold_csv_basenames() -> List[str]:
-    paths = glob.glob(os.path.join(GOLD_DIR, "*.csv"))
-    names = sorted([os.path.basename(p) for p in paths if os.path.isfile(p)])
-    return names
+def list_targets() -> list[Path]:
+    targets: list[Path] = [Path("docs") / "data"]
+    legacy = Path("trainstats-dashboard") / "docs" / "data"
+    if (Path("trainstats-dashboard") / "docs").is_dir():
+        targets.append(legacy)
+    return targets
 
 
-def _copy(src: str, dst: str) -> None:
-    ensure_dir(os.path.dirname(dst))
-    with open(src, "rb") as fsrc, open(dst, "wb") as fdst:
-        fdst.write(fsrc.read())
+def build_manifest(gold_dir: Path) -> dict:
+    gold_files = sorted([p.name for p in gold_dir.glob("*.csv") if p.is_file()])
+    return {
+        "built_at_utc": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+        "gold_files": gold_files,
+    }
+
+
+def copy_gold(gold_dir: Path, target_data_dir: Path) -> None:
+    out_gold = target_data_dir / "gold"
+    ensure_dir(out_gold)
+    for p in gold_dir.glob("*.csv"):
+        if p.is_file():
+            shutil.copy2(p, out_gold / p.name)
+
+
+def copy_root_files(target_data_dir: Path) -> None:
+    ensure_dir(target_data_dir)
+    for fname in ["stations_dim.csv", "capoluoghi_provincia.csv"]:
+        src = Path("data") / fname
+        if src.exists():
+            shutil.copy2(src, target_data_dir / fname)
+
+
+def write_manifest(target_data_dir: Path, manifest: dict) -> None:
+    ensure_dir(target_data_dir)
+    (target_data_dir / "manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+    out_gold = target_data_dir / "gold"
+    ensure_dir(out_gold)
+    (out_gold / "manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
 
 def main() -> None:
-    cfg: Dict[str, Any] = load_yaml("config/pipeline.yml")
+    gold_dir = Path("data") / "gold"
+    if not gold_dir.is_dir():
+        raise SystemExit("missing data/gold, run scripts.build_gold first")
 
-    ensure_dir(SITE_DATA_DIR)
+    manifest = build_manifest(gold_dir)
 
-    # Dimensioni stazioni e capoluoghi
-    try:
-        from .build_station_dim import main as build_station_dim_main
-        build_station_dim_main()
-    except Exception as e:
-        print({"warning": "build_station_dim_failed", "error": str(e)})
+    for t in list_targets():
+        copy_gold(gold_dir, t)
+        copy_root_files(t)
+        write_manifest(t, manifest)
 
-    # Copia tutti i CSV gold
-    gold_files = _list_gold_csv_basenames()
-    if not gold_files:
-        raise ValueError("no gold csv files found to publish")
-
-    for f in gold_files:
-        _copy(os.path.join(GOLD_DIR, f), os.path.join(SITE_DATA_DIR, f))
-
-    # Copia dimensioni se presenti
-    dim_src = os.path.join("site", "data", "stations_dim.csv")
-    if os.path.exists(dim_src):
-        _copy(dim_src, os.path.join(SITE_DATA_DIR, "stations_dim.csv"))
-
-    cap_src = os.path.join("site", "data", "capoluoghi_provincia.csv")
-    if os.path.exists(cap_src):
-        _copy(cap_src, os.path.join(SITE_DATA_DIR, "capoluoghi_provincia.csv"))
-
-    # Manifest
-    built_at_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-    delay_buckets = cfg.get("delay_buckets_minutes", {})
-    labels = delay_buckets.get("labels", [])
-    if isinstance(labels, list):
-        labels = [str(x).replace(" ", "").strip() for x in labels]
-
-    manifest = {
-        "built_at_utc": built_at_utc,
-        "gold_files": gold_files,
-        "punctuality": cfg.get("punctuality", {"on_time_threshold_minutes": 5}),
-        "delay_buckets_minutes": {"labels": labels},
-        "min_counts": cfg.get("min_counts", {"leaderboard_min_trains": 20}),
-    }
-
-    with open(os.path.join(SITE_DATA_DIR, "manifest.json"), "w", encoding="utf-8") as f:
-        json.dump(manifest, f, ensure_ascii=False, indent=2)
-
-    print({"published_files": len(gold_files), "manifest_written": True, "built_at_utc": built_at_utc})
+    print(
+        json.dumps(
+            {
+                "site_targets": [str(t) for t in list_targets()],
+                "gold_dir": str(gold_dir),
+                "manifest": manifest,
+            },
+            ensure_ascii=False,
+        )
+    )
 
 
 if __name__ == "__main__":
