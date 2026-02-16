@@ -1301,9 +1301,6 @@ function capoluogoKey(cityName) {
   return "";
 }
 
-function isCapoluogoCity(cityName) {
-  return !!capoluogoKey(cityName);
-}
 
 function prettyCityName(cityKey, fallback) {
   const raw = String(fallback || "").trim();
@@ -1499,6 +1496,8 @@ function renderMap() {
     if (!code) continue;
 
     const city = stationCity(code, r.nome_stazione || code);
+    if (!city) continue;
+
     const cityKey = capoluogoKey(city);
     if (!cityKey) continue;
 
