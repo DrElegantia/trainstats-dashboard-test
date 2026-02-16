@@ -12,39 +12,23 @@ from .utils import ensure_dir, http_get_with_retry, load_yaml
 
 ISTAT_COMUNI_URL = "https://www.istat.it/storage/codici-unita-amministrative/Elenco-comuni-italiani.csv"
 
-CAPOLUOGHI_DEFAULT = [
-    "Agrigento","Alessandria","Ancona","Aosta","Arezzo","Ascoli Piceno","Asti","Avellino",
-    "Bari","Barletta","Belluno","Benevento","Bergamo","Biella","Bologna","Bolzano","Brescia","Brindisi",
-    "Cagliari","Caltanissetta","Campobasso","Carbonia","Caserta","Catania","Catanzaro","Chieti","Como","Cosenza",
-    "Cremona","Crotone","Cuneo",
-    "Enna",
-    "Fermo","Ferrara","Firenze","Foggia","Forlì","Frosinone",
-    "Genova","Gorizia","Grosseto",
-    "Imperia","Isernia",
-    "L'Aquila","La Spezia","Latina","Lecce","Lecco","Livorno","Lodi","Lucca",
-    "Macerata","Mantova","Massa","Matera","Messina","Milano","Modena","Monza",
-    "Napoli","Novara","Nuoro",
-    "Oristano",
-    "Padova","Palermo","Parma","Pavia","Perugia","Pesaro","Pescara","Piacenza","Pisa","Pistoia","Pordenone","Potenza","Prato",
-    "Ragusa","Ravenna","Reggio Calabria","Reggio Emilia","Rieti","Rimini","Roma","Rovigo",
-    "Salerno","Sassari","Savona","Siena","Siracusa","Sondrio",
-    "Taranto","Teramo","Terni","Torino","Trapani","Trento","Treviso","Trieste",
-    "Udine",
-    "Varese","Venezia","Verbania","Vercelli","Verona","Vibo Valentia","Vicenza","Viterbo"
-]
-
 
 def load_gold_station_table() -> pd.DataFrame:
     p = os.path.join("data", "gold", "stazioni_mese_categoria_nodo.csv")
-    if os.path.exists(p):
-        return pd.read_csv(p, dtype=str)
-    return pd.DataFrame(columns=["cod_stazione", "nome_stazione"])
+    if not os.path.exists(p):
+        raise FileNotFoundError(f"missing gold table: {p}")
+    return pd.read_csv(p, dtype=str)
 
 
-def load_station_registry_optional() -> pd.DataFrame:
+def load_station_registry_or_empty() -> pd.DataFrame:
     p = os.path.join("data", "stations", "stations.csv")
     if not os.path.exists(p):
-        return pd.DataFrame(columns=["cod_stazione"])
+        df = pd.DataFrame({"cod_stazione": pd.Series([], dtype=str)})
+        df["lat"] = pd.Series([], dtype=float)
+        df["lon"] = pd.Series([], dtype=float)
+        df["citta"] = pd.Series([], dtype=str)
+        return df
+
     df = pd.read_csv(p, dtype=str)
 
     rename_map = {}
@@ -56,12 +40,33 @@ def load_station_registry_optional() -> pd.DataFrame:
         df = df.rename(columns=rename_map)
 
     if "cod_stazione" not in df.columns:
-        return pd.DataFrame(columns=["cod_stazione"])
+        raise ValueError("station registry must contain 'cod_stazione' (or 'codice')")
 
     df["cod_stazione"] = df["cod_stazione"].astype(str).str.strip()
+
     for c in ("lat", "lon"):
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce")
+        else:
+            df[c] = pd.Series([pd.NA] * len(df), dtype="float64")
+
+    if "citta" not in df.columns:
+        for alt in ("comune", "city", "nome_comune", "municipality"):
+            if alt in df.columns:
+                df = df.rename(columns={alt: "citta"})
+                break
+    if "citta" not in df.columns:
+        df["citta"] = ""
+
+    keep = ["cod_stazione", "nome_stazione", "lat", "lon", "citta"]
+    for k in keep:
+        if k not in df.columns:
+            df[k] = "" if k in ("nome_stazione", "citta") else pd.NA
+    df = df[keep].copy()
+
+    df["nome_stazione"] = df["nome_stazione"].astype(str).fillna("").str.strip()
+    df["citta"] = df["citta"].astype(str).fillna("").str.strip()
+
     return df
 
 
@@ -83,73 +88,90 @@ def build_capoluoghi_provincia_csv(cfg: Dict[str, Any]) -> pd.DataFrame:
                     df = df.rename(columns={alt: "citta"})
                     break
         if "citta" not in df.columns:
-            df = pd.DataFrame({"citta": CAPOLUOGHI_DEFAULT})
+            raise ValueError(f"{local_path} must contain a 'citta' column")
         df["citta"] = df["citta"].astype(str).str.strip()
         df = df[df["citta"] != ""].drop_duplicates(subset=["citta"]).sort_values("citta")
         return df[["citta"]].reset_index(drop=True)
 
-    use_istat = os.environ.get("REFRESH_CAPOLUOGHI_ISTAT", "").strip() == "1"
-    if use_istat:
-        net = cfg.get("network", {})
-        timeout = int(net.get("timeout_seconds", 20))
-        max_retries = int(net.get("max_retries", 3))
-        backoff = int(net.get("backoff_factor", 2))
-        try:
-            r = http_get_with_retry(ISTAT_COMUNI_URL, timeout=timeout, max_retries=max_retries, backoff_factor=backoff)
-            raw = r.content.decode("utf-8", errors="replace")
-            df = pd.read_csv(io.StringIO(raw), sep=None, engine="python", dtype=str)
-            df.columns = [str(c).strip() for c in df.columns]
+    net = cfg.get("network", {})
+    timeout = int(net.get("timeout_seconds", 20))
+    max_retries = int(net.get("max_retries", 3))
+    backoff = int(net.get("backoff_factor", 2))
 
-            col_city = _pick_col(list(df.columns), "Denominazione in italiano") or _pick_col(list(df.columns), "Denominazione in Italiano")
-            col_flag = _pick_col(list(df.columns), "Flag Comune capoluogo di provincia") or _pick_col(list(df.columns), "capoluogo di provincia")
+    try:
+        r = http_get_with_retry(ISTAT_COMUNI_URL, timeout=timeout, max_retries=max_retries, backoff_factor=backoff)
+        raw = r.content.decode("utf-8", errors="replace")
+        df = pd.read_csv(io.StringIO(raw), sep=";", dtype=str)
+        df.columns = [str(c).strip() for c in df.columns]
 
-            if col_city and col_flag:
-                flag = df[col_flag].astype(str).str.strip().str.upper()
-                is_cap = flag.isin(["1", "SI", "SÌ", "TRUE", "Y", "YES"])
-                out = df.loc[is_cap, [col_city]].rename(columns={col_city: "citta"})
-                out["citta"] = out["citta"].astype(str).str.strip()
-                out = out[out["citta"] != ""].drop_duplicates(subset=["citta"]).sort_values("citta").reset_index(drop=True)
-                if len(out) >= 50:
-                    ensure_dir(os.path.dirname(local_path))
-                    out.to_csv(local_path, index=False)
-                    return out
-        except Exception:
-            pass
+        col_city = _pick_col(list(df.columns), "Denominazione in italiano") or _pick_col(list(df.columns), "Denominazione in Italiano")
+        col_flag = _pick_col(list(df.columns), "Flag Comune capoluogo di provincia") or _pick_col(list(df.columns), "capoluogo di provincia")
 
-    out = pd.DataFrame({"citta": CAPOLUOGHI_DEFAULT}).drop_duplicates().sort_values("citta").reset_index(drop=True)
-    ensure_dir(os.path.dirname(local_path))
-    out.to_csv(local_path, index=False)
-    return out
+        if not col_city or not col_flag:
+            raise ValueError("ISTAT columns not found (city name or capoluogo flag)")
+
+        flag = df[col_flag].astype(str).str.strip()
+        is_cap = flag.isin(["1", "SI", "SÌ", "TRUE", "True", "true", "Y", "y"])
+
+        out = df.loc[is_cap, [col_city]].rename(columns={col_city: "citta"})
+        out["citta"] = out["citta"].astype(str).str.strip()
+        out = out[out["citta"] != ""].drop_duplicates(subset=["citta"]).sort_values("citta").reset_index(drop=True)
+
+        ensure_dir(os.path.dirname(local_path))
+        out.to_csv(local_path, index=False)
+        return out
+
+    except Exception as e:
+        fallback = [
+            "Aosta","Torino","Genova","Milano","Trento","Venezia","Trieste","Bologna","Firenze","Ancona",
+            "Perugia","Roma","L'Aquila","Campobasso","Napoli","Bari","Potenza","Catanzaro","Palermo","Cagliari"
+        ]
+        out = pd.DataFrame({"citta": fallback}).drop_duplicates().sort_values("citta").reset_index(drop=True)
+        ensure_dir(os.path.dirname(local_path))
+        out.to_csv(local_path, index=False)
+        print({"capoluoghi_source": "fallback", "warning": str(e)})
+        return out
 
 
 def main() -> None:
     cfg: Dict[str, Any] = load_yaml("config/pipeline.yml")
 
     gold = load_gold_station_table()
+    reg = load_station_registry_or_empty()
 
-    if "cod_stazione" not in gold.columns:
-        gold["cod_stazione"] = ""
-    if "nome_stazione" not in gold.columns:
-        gold["nome_stazione"] = ""
+    if "cod_stazione" not in gold.columns or "nome_stazione" not in gold.columns:
+        raise ValueError("gold table must contain 'cod_stazione' and 'nome_stazione' columns")
 
     seen = gold[["cod_stazione", "nome_stazione"]].drop_duplicates().copy()
     seen["cod_stazione"] = seen["cod_stazione"].astype(str).str.strip()
+    seen["nome_stazione"] = seen["nome_stazione"].astype(str).fillna("").str.strip()
 
-    reg = load_station_registry_optional()
-    if len(reg) == 0:
-        joined = seen.copy()
-    else:
-        joined = seen.merge(reg, on="cod_stazione", how="left", suffixes=("", "_reg"))
+    joined = seen.merge(reg, on="cod_stazione", how="left", suffixes=("", "_reg"))
+
+    if "nome_stazione_reg" in joined.columns:
+        joined["nome_stazione"] = joined["nome_stazione"].where(joined["nome_stazione"] != "", joined["nome_stazione_reg"])
+        joined = joined.drop(columns=["nome_stazione_reg"])
+
+    if "lat" not in joined.columns:
+        joined["lat"] = pd.NA
+    if "lon" not in joined.columns:
+        joined["lon"] = pd.NA
+    if "citta" not in joined.columns:
+        joined["citta"] = ""
+
+    joined["lat"] = pd.to_numeric(joined["lat"], errors="coerce")
+    joined["lon"] = pd.to_numeric(joined["lon"], errors="coerce")
+    joined["citta"] = joined["citta"].astype(str).fillna("").str.strip()
 
     out_dir = os.path.join("site", "data")
     ensure_dir(out_dir)
-    joined.to_csv(os.path.join(out_dir, "stations_dim.csv"), index=False)
 
-    if {"lat", "lon"}.issubset(joined.columns):
-        missing_mask = joined["lat"].isna() | joined["lon"].isna()
-    else:
-        missing_mask = pd.Series(True, index=joined.index)
-    missing = joined.loc[missing_mask, ["cod_stazione", "nome_stazione"]].drop_duplicates()
+    joined_out = joined[["cod_stazione", "nome_stazione", "lat", "lon", "citta"]].copy()
+    joined_out.to_csv(os.path.join(out_dir, "stations_dim.csv"), index=False)
+
+    missing_cols = ["cod_stazione", "nome_stazione"]
+    missing_mask = joined_out["lat"].isna() | joined_out["lon"].isna()
+    missing = joined_out.loc[missing_mask, missing_cols].drop_duplicates()
 
     missing_path = os.path.join("data", "stations", "stations_unknown.csv")
     ensure_dir(os.path.dirname(missing_path))
@@ -160,7 +182,8 @@ def main() -> None:
 
     print(
         {
-            "stations_dim_rows": int(len(joined)),
+            "stations_dim_rows": int(len(joined_out)),
+            "stations_with_coords": int((~missing_mask).sum()),
             "stations_missing_coords": int(len(missing)),
             "capoluoghi_rows": int(len(cap)),
         }
