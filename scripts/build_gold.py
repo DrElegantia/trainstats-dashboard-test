@@ -2,14 +2,15 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List
+from datetime import date
+from typing import Any, Dict, List, Optional, Set
 
 import pandas as pd
 
 from .utils import bucketize_delay, ensure_dir, load_yaml
 
 
-def list_silver_months() -> List[str]:
+def list_silver_month_files() -> List[str]:
     root = os.path.join("data", "silver")
     out: List[str] = []
     if not os.path.exists(root):
@@ -22,6 +23,24 @@ def list_silver_months() -> List[str]:
             if fn.endswith(".parquet"):
                 out.append(os.path.join(yp, fn))
     return sorted(out)
+
+
+def silver_path_for_month_key(month_key: str) -> str:
+    y = month_key[:4]
+    return os.path.join("data", "silver", y, f"{month_key}.parquet")
+
+
+def load_silver(months: Optional[List[str]] = None) -> pd.DataFrame:
+    if months:
+        paths = [silver_path_for_month_key(m) for m in months]
+        paths = [p for p in paths if os.path.exists(p)]
+    else:
+        paths = list_silver_month_files()
+
+    if not paths:
+        return pd.DataFrame()
+
+    return pd.concat([pd.read_parquet(p) for p in paths], ignore_index=True)
 
 
 def to_month_key(ts: pd.Series) -> pd.Series:
@@ -302,71 +321,4 @@ def gold_keys() -> Dict[str, List[str]]:
         "kpi_giorno": ["giorno"],
         "kpi_mese": ["mese"],
         "hist_mese_categoria": ["mese", "categoria", "bucket_ritardo_arrivo"],
-        "hist_giorno_categoria": ["giorno", "categoria", "bucket_ritardo_arrivo"],
-        "od_mese_categoria": ["mese", "categoria", "cod_partenza", "cod_arrivo"],
-        "od_giorno_categoria": ["giorno", "categoria", "cod_partenza", "cod_arrivo"],
-        "stazioni_mese_categoria_ruolo": ["mese", "categoria", "cod_stazione", "ruolo"],
-        "stazioni_mese_categoria_nodo": ["mese", "categoria", "cod_stazione", "ruolo"],
-        "stazioni_giorno_categoria_ruolo": ["giorno", "categoria", "cod_stazione", "ruolo"],
-        "stazioni_giorno_categoria_nodo": ["giorno", "categoria", "cod_stazione", "ruolo"],
-    }
-
-
-def save_gold_tables(tables: Dict[str, pd.DataFrame]) -> None:
-    # Primary build output
-    out_dir = os.path.join("data", "gold")
-    ensure_dir(out_dir)
-
-    # GitHub Pages output when Pages root is /docs
-    site_dirs = [
-        os.path.join("docs", "data", "gold"),
-    ]
-    if os.path.isdir(os.path.join("trainstats-dashboard", "docs")):
-        site_dirs.append(os.path.join("trainstats-dashboard", "docs", "data", "gold"))
-    for d in site_dirs:
-        ensure_dir(d)
-
-    keys = gold_keys()
-
-    for name, df_new in tables.items():
-        path = os.path.join(out_dir, f"{name}.csv")
-
-        if os.path.exists(path):
-            df_old = pd.read_csv(path)
-            merged = pd.concat([df_old, df_new], ignore_index=True)
-        else:
-            merged = df_new.copy()
-
-        k = keys.get(name)
-        if k:
-            miss = [c for c in k if c not in merged.columns]
-            if miss:
-                raise RuntimeError(f"gold table {name} missing key columns {miss}")
-            merged = merged.drop_duplicates(subset=k, keep="last").sort_values(k)
-
-        merged.to_csv(path, index=False)
-
-        for d in site_dirs:
-            merged.to_csv(os.path.join(d, f"{name}.csv"), index=False)
-
-
-
-def main() -> None:
-    cfg = load_yaml("config/pipeline.yml")
-
-    silver_files = list_silver_months()
-    if not silver_files:
-        print("no silver found, will not build gold")
-        return
-
-    df = pd.concat([pd.read_parquet(p) for p in silver_files], ignore_index=True)
-
-    dfm = build_metrics(cfg, df)
-    tables = build_gold(cfg, dfm)
-    save_gold_tables(tables)
-
-    print({"gold_tables": sorted(list(tables.keys()))})
-
-
-if __name__ == "__main__":
-    main()
+        "hist_giorno_categoria": ["giorno", "categoria", "bucket_ritardo_arrivo"]
