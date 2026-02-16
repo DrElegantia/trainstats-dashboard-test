@@ -11,14 +11,6 @@ def ensure_dir(p: Path) -> None:
     p.mkdir(parents=True, exist_ok=True)
 
 
-def list_targets() -> list[Path]:
-    targets: list[Path] = [Path("docs") / "data"]
-    legacy = Path("trainstats-dashboard") / "docs" / "data"
-    if (Path("trainstats-dashboard") / "docs").is_dir():
-        targets.append(legacy)
-    return targets
-
-
 def build_manifest(gold_dir: Path) -> dict:
     gold_files = sorted([p.name for p in gold_dir.glob("*.csv") if p.is_file()])
     return {
@@ -27,33 +19,45 @@ def build_manifest(gold_dir: Path) -> dict:
     }
 
 
-def copy_gold(gold_dir: Path, target_data_dir: Path) -> None:
-    out_gold = target_data_dir / "gold"
-    ensure_dir(out_gold)
+def copy_gold_files(gold_dir: Path, target_dir: Path) -> None:
+    """Copia i file CSV gold direttamente in docs/data/ (non in una sottocartella)"""
+    ensure_dir(target_dir)
     for p in gold_dir.glob("*.csv"):
         if p.is_file():
-            shutil.copy2(p, out_gold / p.name)
+            shutil.copy2(p, target_dir / p.name)
+            print(f"Copied {p.name} -> {target_dir / p.name}")
 
 
-def copy_root_files(target_data_dir: Path) -> None:
-    ensure_dir(target_data_dir)
-    for fname in ["stations_dim.csv", "capoluoghi_provincia.csv"]:
-        src = Path("data") / fname
+def copy_root_files(target_dir: Path) -> None:
+    """Copia stations_dim.csv e altri file dalla root di data/"""
+    ensure_dir(target_dir)
+    
+    # stations_dim.csv potrebbe essere in data/gold/ o in data/
+    stations_paths = [
+        Path("data") / "gold" / "stations_dim.csv",
+        Path("data") / "stations_dim.csv"
+    ]
+    
+    for src in stations_paths:
         if src.exists():
-            shutil.copy2(src, target_data_dir / fname)
+            shutil.copy2(src, target_dir / "stations_dim.csv")
+            print(f"Copied stations_dim.csv from {src}")
+            break
+    
+    # Capoluoghi provincia (se esiste)
+    capoluoghi = Path("data") / "capoluoghi_provincia.csv"
+    if capoluoghi.exists():
+        shutil.copy2(capoluoghi, target_dir / "capoluoghi_provincia.csv")
+        print(f"Copied capoluoghi_provincia.csv")
 
 
-def write_manifest(target_data_dir: Path, manifest: dict) -> None:
-    ensure_dir(target_data_dir)
-    (target_data_dir / "manifest.json").write_text(
+def write_manifest(target_dir: Path, manifest: dict) -> None:
+    ensure_dir(target_dir)
+    manifest_path = target_dir / "manifest.json"
+    manifest_path.write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
     )
-
-    out_gold = target_data_dir / "gold"
-    ensure_dir(out_gold)
-    (out_gold / "manifest.json").write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    print(f"Wrote manifest to {manifest_path}")
 
 
 def main() -> None:
@@ -62,20 +66,23 @@ def main() -> None:
         raise SystemExit("missing data/gold, run scripts.build_gold first")
 
     manifest = build_manifest(gold_dir)
-
-    for t in list_targets():
-        copy_gold(gold_dir, t)
-        copy_root_files(t)
-        write_manifest(t, manifest)
+    
+    # Target principale: docs/data
+    target = Path("docs") / "data"
+    
+    copy_gold_files(gold_dir, target)
+    copy_root_files(target)
+    write_manifest(target, manifest)
 
     print(
         json.dumps(
             {
-                "site_targets": [str(t) for t in list_targets()],
+                "target": str(target),
                 "gold_dir": str(gold_dir),
                 "manifest": manifest,
             },
             ensure_ascii=False,
+            indent=2
         )
     )
 
