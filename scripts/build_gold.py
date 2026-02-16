@@ -325,9 +325,9 @@ def gold_keys() -> Dict[str, List[str]]:
         "od_mese_categoria": ["mese", "categoria", "cod_partenza", "cod_arrivo"],
         "od_giorno_categoria": ["giorno", "categoria", "cod_partenza", "cod_arrivo"],
         "stazioni_mese_categoria_ruolo": ["mese", "categoria", "cod_stazione", "ruolo"],
-        "stazioni_mese_categoria_nodo": ["mese", "categoria", "cod_stazione", "ruolo"],
+        "stazioni_mese_categoria_nodo": ["mese", "categoria", "cod_stazione"],  # ✅ CORRETTO - senza ruolo
         "stazioni_giorno_categoria_ruolo": ["giorno", "categoria", "cod_stazione", "ruolo"],
-        "stazioni_giorno_categoria_nodo": ["giorno", "categoria", "cod_stazione", "ruolo"],
+        "stazioni_giorno_categoria_nodo": ["giorno", "categoria", "cod_stazione"],  # ✅ CORRETTO - senza ruolo
     }
 
 
