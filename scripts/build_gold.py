@@ -24,6 +24,14 @@ def list_silver_months() -> List[str]:
     return sorted(out)
 
 
+def to_month_key(ts: pd.Series) -> pd.Series:
+    return ts.dt.to_period("M").astype(str)
+
+
+def to_day_key(ts: pd.Series) -> pd.Series:
+    return ts.dt.date.astype(str)
+
+
 def _get_on_time_threshold(cfg: Dict[str, Any]) -> int:
     p = cfg.get("punctuality", {})
     if "on_time_threshold_minutes" in p:
@@ -43,27 +51,10 @@ def _ensure_obs_id(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _safe_day_key_from_reference(df: pd.DataFrame) -> pd.Series:
-    if "data_riferimento" not in df.columns:
-        return pd.Series([None] * len(df), index=df.index, dtype="object")
-    s = df["data_riferimento"].astype(str).str.strip()
-    ok = s.str.match(r"^\d{4}-\d{2}-\d{2}$", na=False)
-    out = pd.Series([None] * len(df), index=df.index, dtype="object")
-    out.loc[ok] = s.loc[ok]
-    return out
-
-
-def _safe_month_key_from_reference(df: pd.DataFrame) -> pd.Series:
-    d = _safe_day_key_from_reference(df)
-    out = pd.Series([None] * len(df), index=df.index, dtype="object")
-    ok = d.notna()
-    out.loc[ok] = d.loc[ok].str.slice(0, 7)
-    return out
-
-
 def build_metrics(cfg: Dict[str, Any], df: pd.DataFrame) -> pd.DataFrame:
     thr = _get_on_time_threshold(cfg)
     df = df.copy()
+
     df = _ensure_obs_id(df)
 
     required_cols = [
@@ -97,26 +88,15 @@ def build_metrics(cfg: Dict[str, Any], df: pd.DataFrame) -> pd.DataFrame:
     df["dt_partenza_prog"] = pd.to_datetime(df["dt_partenza_prog"], errors="coerce")
     df["dt_arrivo_prog"] = pd.to_datetime(df["dt_arrivo_prog"], errors="coerce")
 
-    giorno_ref = _safe_day_key_from_reference(df)
-    mese_ref = _safe_month_key_from_reference(df)
-
-    giorno_dtpart = df["dt_partenza_prog"].dt.date.astype(str)
-    mese_dtpart = df["dt_partenza_prog"].dt.to_period("M").astype(str)
-
-    df["giorno"] = giorno_ref.fillna(giorno_dtpart)
-    df["mese"] = mese_ref.fillna(mese_dtpart)
-
-    anno_from_giorno = pd.to_datetime(df["giorno"], errors="coerce").dt.year
-    df["anno"] = anno_from_giorno.astype("Int64")
-
-    df["dow"] = pd.to_datetime(df["giorno"], errors="coerce").dt.dayofweek.astype("Int64")
-    df["ora_partenza"] = df["dt_partenza_prog"].dt.hour.astype("Int64")
-    df["minuto_partenza"] = df["dt_partenza_prog"].dt.minute.astype("Int64")
+    df["giorno"] = to_day_key(df["dt_partenza_prog"])
+    df["mese"] = to_month_key(df["dt_partenza_prog"])
+    df["anno"] = df["dt_partenza_prog"].dt.year.astype("Int64")
 
     df["ritardo_partenza_min"] = pd.to_numeric(df["ritardo_partenza_min"], errors="coerce")
     df["ritardo_arrivo_min"] = pd.to_numeric(df["ritardo_arrivo_min"], errors="coerce")
 
     df["has_delay_arrivo"] = df["ritardo_arrivo_min"].notna()
+    df["has_delay_partenza"] = df["ritardo_partenza_min"].notna()
 
     df["arrivo_in_orario"] = df["has_delay_arrivo"] & (df["ritardo_arrivo_min"] <= thr) & (df["ritardo_arrivo_min"] >= 0)
     df["arrivo_in_ritardo"] = df["has_delay_arrivo"] & (df["ritardo_arrivo_min"] > thr)
@@ -187,10 +167,12 @@ def agg_core(group_cols: List[str], df: pd.DataFrame) -> pd.DataFrame:
         p95=("ritardo_arrivo_min", q95),
     ).reset_index()
 
+    out["cancellate_tot"] = out["cancellate"].fillna(0).astype(int) + out["parzialmente_cancellate"].fillna(0).astype(int)
+
     return out
 
 
-def build_gold_tables(cfg: Dict[str, Any], df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
+def build_gold(cfg: Dict[str, Any], df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
     out: Dict[str, pd.DataFrame] = {}
 
     out["kpi_giorno_categoria"] = agg_core(["giorno", "categoria"], df)
@@ -212,17 +194,17 @@ def build_gold_tables(cfg: Dict[str, Any], df: pd.DataFrame) -> Dict[str, pd.Dat
     ).reset_index()
     out["hist_giorno_categoria"] = h_d
 
+    od_m = agg_core(["mese", "categoria", "cod_partenza", "cod_arrivo"], df)
+    od_d = agg_core(["giorno", "categoria", "cod_partenza", "cod_arrivo"], df)
+
     part_names = df.dropna(subset=["cod_partenza"]).drop_duplicates("cod_partenza").set_index("cod_partenza")["nome_partenza"]
     arr_names = df.dropna(subset=["cod_arrivo"]).drop_duplicates("cod_arrivo").set_index("cod_arrivo")["nome_arrivo"]
 
-    od_m = agg_core(["mese", "categoria", "cod_partenza", "cod_arrivo"], df)
-    od_m["nome_partenza"] = od_m["cod_partenza"].map(part_names).fillna("")
-    od_m["nome_arrivo"] = od_m["cod_arrivo"].map(arr_names).fillna("")
-    out["od_mese_categoria"] = od_m
+    for od in (od_m, od_d):
+        od["nome_partenza"] = od["cod_partenza"].map(part_names).fillna("")
+        od["nome_arrivo"] = od["cod_arrivo"].map(arr_names).fillna("")
 
-    od_d = agg_core(["giorno", "categoria", "cod_partenza", "cod_arrivo"], df)
-    od_d["nome_partenza"] = od_d["cod_partenza"].map(part_names).fillna("")
-    od_d["nome_arrivo"] = od_d["cod_arrivo"].map(arr_names).fillna("")
+    out["od_mese_categoria"] = od_m
     out["od_giorno_categoria"] = od_d
 
     dep_src = df.rename(columns={"cod_partenza": "cod_stazione"})
@@ -236,15 +218,26 @@ def build_gold_tables(cfg: Dict[str, Any], df: pd.DataFrame) -> Dict[str, pd.Dat
     arr_m["ruolo"] = "arrivo"
     arr_m["nome_stazione"] = arr_m["cod_stazione"].map(arr_names).fillna("")
 
-    combined_m = pd.concat([dep_m, arr_m], ignore_index=True)
-    out["stazioni_mese_categoria_ruolo"] = combined_m
+    out["stazioni_mese_categoria_ruolo"] = pd.concat([dep_m, arr_m], ignore_index=True)
 
+    dep_d = agg_core(["giorno", "categoria", "cod_stazione"], dep_src)
+    dep_d["ruolo"] = "partenza"
+    dep_d["nome_stazione"] = dep_d["cod_stazione"].map(part_names).fillna("")
+
+    arr_d = agg_core(["giorno", "categoria", "cod_stazione"], arr_src)
+    arr_d["ruolo"] = "arrivo"
+    arr_d["nome_stazione"] = arr_d["cod_stazione"].map(arr_names).fillna("")
+
+    out["stazioni_giorno_categoria_ruolo"] = pd.concat([dep_d, arr_d], ignore_index=True)
+
+    combined_m = out["stazioni_mese_categoria_ruolo"]
     comb2_m = combined_m.groupby(["mese", "categoria", "cod_stazione"], dropna=False).agg(
         corse_osservate=("corse_osservate", "sum"),
         effettuate=("effettuate", "sum"),
         cancellate=("cancellate", "sum"),
         soppresse=("soppresse", "sum"),
         parzialmente_cancellate=("parzialmente_cancellate", "sum"),
+        cancellate_tot=("cancellate_tot", "sum"),
         info_mancante=("info_mancante", "sum"),
         in_orario=("in_orario", "sum"),
         in_ritardo=("in_ritardo", "sum"),
@@ -268,23 +261,14 @@ def build_gold_tables(cfg: Dict[str, Any], df: pd.DataFrame) -> Dict[str, pd.Dat
     comb2_m["nome_stazione"] = comb2_m["cod_stazione"].map(name_any_m).fillna("")
     out["stazioni_mese_categoria_nodo"] = comb2_m
 
-    dep_d = agg_core(["giorno", "categoria", "cod_stazione"], dep_src)
-    dep_d["ruolo"] = "partenza"
-    dep_d["nome_stazione"] = dep_d["cod_stazione"].map(part_names).fillna("")
-
-    arr_d = agg_core(["giorno", "categoria", "cod_stazione"], arr_src)
-    arr_d["ruolo"] = "arrivo"
-    arr_d["nome_stazione"] = arr_d["cod_stazione"].map(arr_names).fillna("")
-
-    combined_d = pd.concat([dep_d, arr_d], ignore_index=True)
-    out["stazioni_giorno_categoria_ruolo"] = combined_d
-
+    combined_d = out["stazioni_giorno_categoria_ruolo"]
     comb2_d = combined_d.groupby(["giorno", "categoria", "cod_stazione"], dropna=False).agg(
         corse_osservate=("corse_osservate", "sum"),
         effettuate=("effettuate", "sum"),
         cancellate=("cancellate", "sum"),
         soppresse=("soppresse", "sum"),
         parzialmente_cancellate=("parzialmente_cancellate", "sum"),
+        cancellate_tot=("cancellate_tot", "sum"),
         info_mancante=("info_mancante", "sum"),
         in_orario=("in_orario", "sum"),
         in_ritardo=("in_ritardo", "sum"),
@@ -338,7 +322,7 @@ def save_gold_tables(tables: Dict[str, pd.DataFrame]) -> None:
         path = os.path.join(out_dir, f"{name}.csv")
 
         if os.path.exists(path):
-            df_old = pd.read_csv(path, dtype=str)
+            df_old = pd.read_csv(path)
             merged = pd.concat([df_old, df_new], ignore_index=True)
         else:
             merged = df_new.copy()
@@ -358,12 +342,13 @@ def main() -> None:
 
     silver_files = list_silver_months()
     if not silver_files:
-        raise ValueError("no silver parquet found")
+        print("no silver found, will not build gold")
+        return
 
     df = pd.concat([pd.read_parquet(p) for p in silver_files], ignore_index=True)
 
     dfm = build_metrics(cfg, df)
-    tables = build_gold_tables(cfg, dfm)
+    tables = build_gold(cfg, dfm)
     save_gold_tables(tables)
 
     print({"gold_tables": sorted(list(tables.keys()))})
