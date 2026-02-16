@@ -1232,7 +1232,8 @@ function renderHist() {
   const toggle = document.getElementById("histModeToggle");
   const showPct = !!(toggle && toggle.checked);
 
-  const useDay = useDailyAggregation() && state.data.histDayCat && state.data.histDayCat.length > 0;
+  const haveDayHist = state.data.histDayCat && state.data.histDayCat.length > 0;
+  const useDay = haveDayHist && (hasDayFilter() || hasWeekdayFilter() || hasTimeFilter());
   const base = useDay ? state.data.histDayCat : state.data.histMonthCat;
   const keyField = useDay ? "giorno" : "mese";
 
