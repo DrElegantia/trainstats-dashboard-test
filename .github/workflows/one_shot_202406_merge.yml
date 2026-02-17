@@ -6,6 +6,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -107,5 +111,17 @@ jobs:
             echo "No changes to commit"
           else
             git commit -m "One-shot backfill bronze to gold/docs"
-            git push
+            git pull --rebase origin "${GITHUB_REF_NAME}"
+
+            for i in 1 2 3; do
+              if git push origin "HEAD:${GITHUB_REF_NAME}"; then
+                break
+              fi
+              if [ "$i" -eq 3 ]; then
+                echo "Push failed after 3 attempts" >&2
+                exit 1
+              fi
+              echo "Push failed (attempt $i), retrying in 20s..."
+              sleep 20
+            done
           fi
