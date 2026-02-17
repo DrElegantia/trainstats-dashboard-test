@@ -2,6 +2,22 @@ name: One shot backfill bronze -> gold/docs
 
 on:
   workflow_dispatch:
+    inputs:
+      start_date:
+        description: "Start date (YYYY-MM-DD). Leave empty to auto-discover from bronze files."
+        required: false
+        type: string
+        default: ""
+      end_date:
+        description: "End date (YYYY-MM-DD). Leave empty to auto-discover from bronze files."
+        required: false
+        type: string
+        default: ""
+      months:
+        description: "Space-separated months (YYYYMM). Leave empty to derive from bronze files."
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: write
@@ -38,36 +54,71 @@ jobs:
             exit 1
           fi
 
-      - name: Discover available bronze date range
+      - name: Resolve date range (manual inputs or auto-discover from bronze)
         id: bronze_range
+        env:
+          INPUT_START: ${{ inputs.start_date }}
+          INPUT_END: ${{ inputs.end_date }}
+          INPUT_MONTHS: ${{ inputs.months }}
         run: |
           python - <<'PY'
           import os
           import re
           from pathlib import Path
 
-          metas = sorted(Path("data/bronze").rglob("*.meta.json"))
-          if not metas:
-            raise SystemExit("No bronze meta files found in data/bronze")
+          input_start = os.environ.get("INPUT_START", "").strip()
+          input_end = os.environ.get("INPUT_END", "").strip()
+          input_months = os.environ.get("INPUT_MONTHS", "").strip()
 
-          days = []
-          for p in metas:
-            m = re.search(r"(\d{8})\.meta\.json$", p.name)
-            if m:
-              days.append(m.group(1))
+          if input_start and input_end:
+            # Use manually provided dates
+            start = input_start
+            end = input_end
+            print(f"Using manual date range: {start} -> {end}")
 
-          if not days:
-            raise SystemExit("No YYYYMMDD dates found in bronze meta filenames")
+            if input_months:
+              months = input_months.split()
+              print(f"Using manual months: {months}")
+            else:
+              # Derive months from start/end
+              from datetime import date
+              s = date.fromisoformat(start)
+              e = date.fromisoformat(end)
+              months = set()
+              cur = s.replace(day=1)
+              while cur <= e:
+                months.add(cur.strftime("%Y%m"))
+                if cur.month == 12:
+                  cur = cur.replace(year=cur.year + 1, month=1)
+                else:
+                  cur = cur.replace(month=cur.month + 1)
+              months = sorted(months)
+              print(f"Derived months from range: {months}")
+          else:
+            # Auto-discover from bronze files
+            print("No manual dates provided, auto-discovering from bronze files...")
+            metas = sorted(Path("data/bronze").rglob("*.meta.json"))
+            if not metas:
+              raise SystemExit("No bronze meta files found in data/bronze")
 
-          days = sorted(set(days))
-          start = f"{days[0][:4]}-{days[0][4:6]}-{days[0][6:8]}"
-          end = f"{days[-1][:4]}-{days[-1][4:6]}-{days[-1][6:8]}"
-          months = sorted({d[:6] for d in days})
+            days = []
+            for p in metas:
+              m = re.search(r"(\d{8})\.meta\.json$", p.name)
+              if m:
+                days.append(m.group(1))
 
-          print(f"bronze days: {len(days)}")
+            if not days:
+              raise SystemExit("No YYYYMMDD dates found in bronze meta filenames")
+
+            days = sorted(set(days))
+            start = f"{days[0][:4]}-{days[0][4:6]}-{days[0][6:8]}"
+            end = f"{days[-1][:4]}-{days[-1][4:6]}-{days[-1][6:8]}"
+            months = sorted({d[:6] for d in days})
+            print(f"bronze days: {len(days)}")
+
           print(f"start={start}")
           print(f"end={end}")
-          print(f"months={','.join(months)}")
+          print(f"months={' '.join(months)}")
 
           github_output = os.environ.get("GITHUB_OUTPUT")
           if not github_output:
