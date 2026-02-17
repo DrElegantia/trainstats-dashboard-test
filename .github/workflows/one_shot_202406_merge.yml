@@ -6,6 +6,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -26,10 +30,19 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+
+      - name: Fail on unresolved merge markers
+        run: |
+          if rg -n "<<<<<<<|=======|>>>>>>>" --glob "*.py" --glob "*.yml" --glob "*.yaml" .; then
+            echo "Unresolved merge markers found" >&2
+            exit 1
+          fi
+
       - name: Discover available bronze date range
         id: bronze_range
         run: |
           python - <<'PY'
+          import os
           import re
           from pathlib import Path
 
@@ -56,7 +69,11 @@ jobs:
           print(f"end={end}")
           print(f"months={','.join(months)}")
 
-          with open("$GITHUB_OUTPUT", "a", encoding="utf-8") as f:
+          github_output = os.environ.get("GITHUB_OUTPUT")
+          if not github_output:
+            raise SystemExit("GITHUB_OUTPUT is not set")
+
+          with open(github_output, "a", encoding="utf-8") as f:
             f.write(f"start={start}\n")
             f.write(f"end={end}\n")
             f.write(f"months={' '.join(months)}\n")
@@ -94,5 +111,17 @@ jobs:
             echo "No changes to commit"
           else
             git commit -m "One-shot backfill bronze to gold/docs"
-            git push
+            git pull --rebase origin "${GITHUB_REF_NAME}"
+
+            for i in 1 2 3; do
+              if git push origin "HEAD:${GITHUB_REF_NAME}"; then
+                break
+              fi
+              if [ "$i" -eq 3 ]; then
+                echo "Push failed after 3 attempts" >&2
+                exit 1
+              fi
+              echo "Push failed (attempt $i), retrying in 20s..."
+              sleep 20
+            done
           fi
