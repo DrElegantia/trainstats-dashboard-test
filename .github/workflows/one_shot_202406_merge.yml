@@ -161,7 +161,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git add data/gold docs/data docs/.nojekyll stations || true
+          git add docs/data docs/.nojekyll stations || true
 
           if git diff --cached --quiet; then
             echo "No changes to commit"
