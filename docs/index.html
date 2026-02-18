@@ -4,7 +4,6 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>TrainStats Dashboard</title>
-  <link rel="stylesheet" href="https://unpkg.com/tabulator-tables@6.3.0/dist/css/tabulator.min.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="assets/style.css" />
 </head>
@@ -35,7 +34,7 @@
       <select id="arrSel"></select>
     </div>
     <div class="filter">
-      <label for="mapMetricSel">Mappa</label>
+      <label for="mapMetricSel">Metrica</label>
       <select id="mapMetricSel">
         <option value="pct_ritardo">Percentuale in ritardo</option>
         <option value="in_ritardo">Conteggio in ritardo</option>
@@ -74,46 +73,73 @@
   </section>
 
   <section class="panel grid2">
-    <div class="card">
-      <h2>Serie giornaliera</h2>
-      <div class="note" id="noteThreshold"></div>
-      <div id="chartDaily" class="chart"></div>
+    <div class="card collapsible">
+      <div class="card-header">
+        <h2>Delay Index Mensile</h2>
+        <button class="card-toggle" aria-label="Espandi/Collassa">&#9660;</button>
+      </div>
+      <div class="card-body">
+        <div class="note">(In ritardo + Cancellati + Soppressi) / Corse osservate &times; 100</div>
+        <div id="chartDelayIndex" class="chart"></div>
+      </div>
     </div>
-    <div class="card">
-      <h2>Serie mensile</h2>
-      <div id="chartMonthly" class="chart"></div>
-    </div>
-  </section>
-
-  <section class="panel grid2">
-    <div class="card">
-      <h2>Distribuzione ritardo arrivo</h2>
-      <div id="chartHist" class="chart"></div>
-    </div>
-    <div class="card">
-      <h2>Mappa stazioni</h2>
-      <div id="map" class="map"></div>
-      <div class="note" id="mapNote"></div>
+    <div class="card collapsible">
+      <div class="card-header">
+        <h2>Serie mensile</h2>
+        <button class="card-toggle" aria-label="Espandi/Collassa">&#9660;</button>
+      </div>
+      <div class="card-body">
+        <div id="chartMonthly" class="chart"></div>
+      </div>
     </div>
   </section>
 
   <section class="panel grid2">
-    <div class="card">
-      <h2>Stazioni più problematiche</h2>
-      <div class="note">Tabella filtrata e ordinabile. Soglia minima applicata per evitare rumore su pochi treni.</div>
-      <div id="tableStations"></div>
+    <div class="card collapsible">
+      <div class="card-header">
+        <h2>Distribuzione ritardo arrivo</h2>
+        <button class="card-toggle" aria-label="Espandi/Collassa">&#9660;</button>
+      </div>
+      <div class="card-body">
+        <div id="chartHist" class="chart"></div>
+      </div>
     </div>
-    <div class="card">
-      <h2>Relazioni partenza arrivo</h2>
-      <div class="note">Mostra percentuale e minuti, utile per capire se il problema è frequente o solo “costoso”.</div>
-      <div id="tableOD"></div>
+    <div class="card collapsible">
+      <div class="card-header">
+        <h2>Mappa stazioni</h2>
+        <button class="card-toggle" aria-label="Espandi/Collassa">&#9660;</button>
+      </div>
+      <div class="card-body">
+        <div id="map" class="map"></div>
+        <div class="note" id="mapNote"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="card collapsible">
+      <div class="card-header">
+        <h2>Top 10 Stazioni pi&ugrave; problematiche</h2>
+        <div class="card-header-controls">
+          <select id="stationsMetricSel" class="card-select">
+            <option value="pct_ritardo">% in ritardo</option>
+            <option value="in_ritardo">Conteggio in ritardo</option>
+            <option value="minuti_ritardo_tot">Minuti ritardo</option>
+            <option value="cancellate_tot">Cancellati</option>
+            <option value="soppresse">Soppressi</option>
+            <option value="corse_osservate">Corse osservate</option>
+          </select>
+          <button class="card-toggle" aria-label="Espandi/Collassa">&#9660;</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div id="chartStationsTop10" class="chart chart--tall"></div>
+      </div>
     </div>
   </section>
 
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-  <script src="https://unpkg.com/tabulator-tables@6.3.0/dist/js/tabulator.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="assets/app.js"></script>
 </body>
 </html>
-

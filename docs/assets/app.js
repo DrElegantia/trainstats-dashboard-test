@@ -18,13 +18,13 @@ window.addEventListener("unhandledrejection", (e) => {
 });
 
 async function fetchText(path) {
-  const r = await fetch(path, { cache: "no-store" });
+  const r = await fetch(path, { cache: "default" });
   if (!r.ok) throw new Error("Failed fetch " + path + " (" + r.status + ")");
   return await r.text();
 }
 
 async function fetchJson(path) {
-  const r = await fetch(path, { cache: "no-store" });
+  const r = await fetch(path, { cache: "default" });
   if (!r.ok) throw new Error("Failed fetch " + path + " (" + r.status + ")");
   return await r.json();
 }
@@ -284,11 +284,6 @@ const state = {
   },
   stationsRef: new Map(),
   capoluoghiSet: new Set(),
-  tables: {
-    stations: null,
-    od: null,
-    cities: null
-  },
   map: null,
   markers: [],
   filters: {
@@ -525,75 +520,6 @@ function passMonthFromDayRange(row, field) {
   return m >= lo && m <= hi;
 }
 
-function safeSetData(table, data) {
-  if (!table || typeof table.setData !== "function") return;
-  try {
-    const p = table.setData(data);
-    if (p && typeof p.catch === "function") p.catch(() => {});
-  } catch {}
-}
-
-function initTables() {
-  if (typeof Tabulator !== "function") return;
-
-  const stationsEl = firstEl(["stationsTable", "tableStations", "tblStations"]);
-  const odEl = firstEl(["odTable", "tableOD", "tblOD"]);
-  const citiesEl = firstEl(["citiesTable", "tableCities", "tblCities"]);
-
-  if (stationsEl && !state.tables.stations) {
-    state.tables.stations = new Tabulator(stationsEl, {
-      data: [],
-      layout: "fitColumns",
-      pagination: "local",
-      paginationSize: 10,
-      columns: [
-        { title: "Stazione", field: "nome_stazione", sorter: "string" },
-        { title: "Codice", field: "cod_stazione", sorter: "string", width: 110 },
-        { title: "Corse", field: "corse_osservate", sorter: "number", hozAlign: "right", width: 110 },
-        { title: "% ritardo", field: "pct_ritardo", sorter: "number", hozAlign: "right", width: 110, formatter: (c) => fmtFloat(c.getValue()) },
-        { title: "In ritardo", field: "in_ritardo", sorter: "number", hozAlign: "right", width: 120 },
-        { title: "Minuti", field: "minuti_ritardo_tot", sorter: "number", hozAlign: "right", width: 130 },
-        { title: "Cancellati", field: "cancellate_tot", sorter: "number", hozAlign: "right", width: 120 },
-        { title: "Soppressi", field: "soppresse", sorter: "number", hozAlign: "right", width: 110 }
-      ]
-    });
-  }
-
-  if (odEl && !state.tables.od) {
-    state.tables.od = new Tabulator(odEl, {
-      data: [],
-      layout: "fitColumns",
-      pagination: "local",
-      paginationSize: 10,
-      columns: [
-        { title: "Partenza", field: "nome_partenza", sorter: "string" },
-        { title: "Arrivo", field: "nome_arrivo", sorter: "string" },
-        { title: "Corse", field: "corse_osservate", sorter: "number", hozAlign: "right", width: 110 },
-        { title: "% ritardo", field: "pct_ritardo", sorter: "number", hozAlign: "right", width: 110, formatter: (c) => fmtFloat(c.getValue()) },
-        { title: "In ritardo", field: "in_ritardo", sorter: "number", hozAlign: "right", width: 120 },
-        { title: "Minuti", field: "minuti_ritardo_tot", sorter: "number", hozAlign: "right", width: 130 }
-      ]
-    });
-  }
-
-  if (citiesEl && !state.tables.cities) {
-    state.tables.cities = new Tabulator(citiesEl, {
-      data: [],
-      layout: "fitColumns",
-      pagination: "local",
-      paginationSize: 10,
-      columns: [
-        { title: "Città", field: "city", sorter: "string" },
-        { title: "Corse", field: "corse_osservate", sorter: "number", hozAlign: "right", width: 110 },
-        { title: "% ritardo", field: "pct_ritardo", sorter: "number", hozAlign: "right", width: 110, formatter: (c) => fmtFloat(c.getValue()) },
-        { title: "In ritardo", field: "in_ritardo", sorter: "number", hozAlign: "right", width: 120 },
-        { title: "Minuti", field: "minuti_ritardo_tot", sorter: "number", hozAlign: "right", width: 130 },
-        { title: "Cancellati", field: "cancellate_tot", sorter: "number", hozAlign: "right", width: 120 },
-        { title: "Soppressi", field: "soppresse", sorter: "number", hozAlign: "right", width: 110 }
-      ]
-    });
-  }
-}
 
 function initMap() {
   const mapEl = firstEl(["map", "mapStations", "stationsMap"]);
@@ -828,7 +754,7 @@ function updateFiltersNote() {
   let msg = "Filtro attivo.";
   if ((d || w) && !haveDay) msg = "Filtro attivo, ma mancano le tabelle giornaliere.";
   if (t && haveDay) msg = "Filtro attivo. Se non esiste la dimensione oraria nei CSV, il filtro orario non cambia i risultati.";
-  if ((d || w) && haveDay && (!haveOdDay || !haveStDay)) msg = msg + " Per tabelle tratte e stazioni serve anche OD e stazioni giornaliere.";
+  if ((d || w) && haveDay && !haveStDay) msg = msg + " Per la mappa stazioni serve anche il file stazioni giornaliero.";
 
   el.innerText = msg;
 }
@@ -1141,48 +1067,6 @@ function renderKPI() {
   setTextByIds(["cardSopp", "kpiSuppressed", "kpiSoppressi", "soppressi", "soppresse"], fmtInt(sopp));
 }
 
-function seriesDaily() {
-  const stationFiltered = hasStationFilter();
-  let rows;
-
-  if (stationFiltered) {
-    rows = state.data.odDayCat && state.data.odDayCat.length ? state.data.odDayCat : [];
-  } else {
-    rows = state.data.kpiDayCat && state.data.kpiDayCat.length ? state.data.kpiDayCat : state.data.kpiDay;
-  }
-  rows = rows || [];
-
-  if (state.filters.year !== "all") rows = rows.filter((r) => passYear(r, "giorno"));
-  if (state.filters.cat !== "all") rows = rows.filter(passCat);
-
-  if (stationFiltered) {
-    if (state.filters.dep !== "all") rows = rows.filter(passDep);
-    if (state.filters.arr !== "all") rows = rows.filter(passArr);
-  }
-
-  if (hasDayFilter() || hasWeekdayFilter() || hasTimeFilter()) rows = rows.filter((r) => passDayKey(r, "giorno"));
-
-  const by = new Map();
-  for (const r of rows) {
-    const day = String(r.giorno || "").slice(0, 10);
-    if (!day) continue;
-    if (!by.has(day)) by.set(day, { key: day, corse: 0, rit: 0, min: 0, sopp: 0, canc: 0 });
-    const o = by.get(day);
-    o.corse += toNum(r.corse_osservate);
-    o.rit += toNum(r.in_ritardo);
-    o.min += toNum(r.minuti_ritardo_tot);
-    o.sopp += toNum(r.soppresse);
-    const cv = r.cancellate_tot !== undefined && r.cancellate_tot !== "" ? r.cancellate_tot : r.cancellate;
-    o.canc += toNum(cv);
-  }
-
-  const out = Array.from(by.values()).sort((a, b) => String(a.key).localeCompare(String(b.key)));
-  const x = out.map((o) => o.key);
-  const y = out.map((o) => computeValue(o.corse, o.rit, o.min, o.sopp, o.canc));
-
-  return { x, y };
-}
-
 function seriesMonthly() {
   const stationFiltered = hasStationFilter();
   let rows;
@@ -1225,24 +1109,67 @@ function seriesMonthly() {
   return { x, y };
 }
 
+function isCardCollapsed(el) {
+  if (!el) return false;
+  const card = el.closest && el.closest(".card");
+  return card ? card.classList.contains("card--collapsed") : false;
+}
+
+function seriesDelayIndex() {
+  const stationFiltered = hasStationFilter();
+  let rows;
+
+  if (stationFiltered) {
+    rows = state.data.odMonthCat && state.data.odMonthCat.length ? state.data.odMonthCat : [];
+  } else {
+    rows = state.data.kpiMonthCat && state.data.kpiMonthCat.length ? state.data.kpiMonthCat : state.data.kpiMonth;
+  }
+  rows = rows || [];
+
+  if (state.filters.year !== "all") rows = rows.filter((r) => passYear(r, "mese"));
+  if (state.filters.cat !== "all") rows = rows.filter(passCat);
+
+  if (stationFiltered) {
+    if (state.filters.dep !== "all") rows = rows.filter(passDep);
+    if (state.filters.arr !== "all") rows = rows.filter(passArr);
+  }
+
+  if (hasDayFilter()) rows = rows.filter((r) => passMonthFromDayRange(r, "mese"));
+
+  const by = new Map();
+  for (const r of rows) {
+    const m = String(r.mese || "").slice(0, 7);
+    if (!m) continue;
+    if (!by.has(m)) by.set(m, { key: m, corse: 0, rit: 0, canc: 0, sopp: 0 });
+    const o = by.get(m);
+    o.corse += toNum(r.corse_osservate);
+    o.rit += toNum(r.in_ritardo);
+    const cv = r.cancellate_tot !== undefined && r.cancellate_tot !== "" ? r.cancellate_tot : r.cancellate;
+    o.canc += toNum(cv);
+    o.sopp += toNum(r.soppresse);
+  }
+
+  const out = Array.from(by.values()).sort((a, b) => String(a.key).localeCompare(String(b.key)));
+  const x = out.map((o) => o.key);
+  const y = out.map((o) => o.corse > 0 ? ((o.rit + o.canc + o.sopp) / o.corse) * 100 : 0);
+
+  return { x, y };
+}
+
 function renderSeries() {
   if (typeof Plotly !== "object") return;
 
-  const dEl = firstEl(["chartDaily", "chartDay", "chartGiorno", "chartSeriesDaily"]);
+  const diEl = document.getElementById("chartDelayIndex");
   const mEl = firstEl(["chartMonthly", "chartMonth", "chartMese", "chartSeriesMonthly"]);
 
-  const d = seriesDaily();
-  const m = seriesMonthly();
-
-  const yTitle = metricLabel();
-
-  if (dEl) {
+  if (diEl && !isCardCollapsed(diEl)) {
+    const di = seriesDelayIndex();
     Plotly.react(
-      dEl,
-      [{ x: d.x, y: d.y, type: "scatter", mode: "lines+markers", name: yTitle }],
+      diEl,
+      [{ x: di.x, y: di.y, type: "scatter", mode: "lines+markers", name: "Delay Index (%)", line: { color: "#ff7aa2" } }],
       {
-        margin: { l: 50, r: 20, t: 10, b: 50 },
-        yaxis: { title: yTitle, rangemode: "tozero" },
+        margin: { l: 55, r: 20, t: 10, b: 50 },
+        yaxis: { title: "Delay Index (%)", rangemode: "tozero" },
         xaxis: { type: "category" },
         paper_bgcolor: "rgba(0,0,0,0)",
         plot_bgcolor: "rgba(0,0,0,0)",
@@ -1252,7 +1179,9 @@ function renderSeries() {
     );
   }
 
-  if (mEl) {
+  if (mEl && !isCardCollapsed(mEl)) {
+    const m = seriesMonthly();
+    const yTitle = metricLabel();
     Plotly.react(
       mEl,
       [{ x: m.x, y: m.y, type: "scatter", mode: "lines+markers", name: yTitle }],
@@ -1278,6 +1207,7 @@ function renderHist() {
 
   const chart = firstEl(["chartHist", "histChart", "chartDistribution"]);
   if (!chart) return;
+  if (isCardCollapsed(chart)) return;
 
   ensureHistToggle();
 
@@ -1384,7 +1314,31 @@ function prettyCityName(cityKey, fallback) {
     .replace(/\b([a-zàèéìòù])/g, (m) => m.toUpperCase());
 }
 
-function renderStationsTable() {
+function getStationsMetric() {
+  const sel = document.getElementById("stationsMetricSel");
+  return sel ? (sel.value || "pct_ritardo") : "pct_ritardo";
+}
+
+function stationsMetricLabel() {
+  const m = getStationsMetric();
+  const labels = {
+    pct_ritardo: "% in ritardo",
+    in_ritardo: "In ritardo",
+    minuti_ritardo_tot: "Minuti ritardo",
+    cancellate_tot: "Cancellati",
+    soppresse: "Soppressi",
+    corse_osservate: "Corse osservate"
+  };
+  return labels[m] || m;
+}
+
+function renderStationsTop10() {
+  if (typeof Plotly !== "object") return;
+
+  const chart = document.getElementById("chartStationsTop10");
+  if (!chart) return;
+  if (isCardCollapsed(chart)) return;
+
   const useDay = useDailyAggregation() && state.data.stationsDayNode && state.data.stationsDayNode.length > 0;
   const base = useDay ? state.data.stationsDayNode : state.data.stationsMonthNode;
   const keyField = useDay ? "giorno" : "mese";
@@ -1419,10 +1373,8 @@ function renderStationsTable() {
     a.corse_osservate += toNum(r.corse_osservate);
     a.in_ritardo += toNum(r.in_ritardo);
     a.minuti_ritardo_tot += toNum(r.minuti_ritardo_tot);
-
     const canc = r.cancellate_tot !== undefined && r.cancellate_tot !== "" ? r.cancellate_tot : r.cancellate;
     a.cancellate_tot += toNum(canc);
-
     a.soppresse += toNum(r.soppresse);
   }
 
@@ -1431,109 +1383,34 @@ function renderStationsTable() {
     o.pct_ritardo = o.corse_osservate > 0 ? (o.in_ritardo / o.corse_osservate) * 100 : 0;
   });
 
-  out.sort((a, b) => toNum(b.pct_ritardo) - toNum(a.pct_ritardo));
-  safeSetData(state.tables.stations, out.slice(0, 200));
-  try {
-    if (state.tables.stations) state.tables.stations.setSort("pct_ritardo", "desc");
-  } catch {}
-}
+  const metric = getStationsMetric();
+  out.sort((a, b) => toNum(b[metric]) - toNum(a[metric]));
+  const top10 = out.slice(0, 10).reverse();
 
-function renderODTable() {
-  const useDay = useDailyAggregation() && state.data.odDayCat && state.data.odDayCat.length > 0;
-  const base = useDay ? state.data.odDayCat : state.data.odMonthCat;
-  const keyField = useDay ? "giorno" : "mese";
+  const yLabels = top10.map((o) => o.nome_stazione || o.cod_stazione);
+  const xValues = top10.map((o) => toNum(o[metric]));
+  const label = stationsMetricLabel();
 
-  let rows = base || [];
-
-  if (state.filters.year !== "all") rows = rows.filter((r) => passYear(r, keyField));
-  if (state.filters.cat !== "all") rows = rows.filter(passCat);
-
-  if (useDay) rows = rows.filter((r) => passDayKey(r, "giorno"));
-  else if (hasDayFilter()) rows = rows.filter((r) => passMonthFromDayRange(r, "mese"));
-
-  if (state.filters.dep !== "all") rows = rows.filter(passDep);
-  if (state.filters.arr !== "all") rows = rows.filter(passArr);
-
-  const out = rows
-    .map((r) => {
-      const corse = toNum(r.corse_osservate);
-      const rit = toNum(r.in_ritardo);
-      const min = toNum(r.minuti_ritardo_tot);
-      return {
-        cod_partenza: r.cod_partenza,
-        cod_arrivo: r.cod_arrivo,
-        nome_partenza: stationName(r.cod_partenza, r.nome_partenza),
-        nome_arrivo: stationName(r.cod_arrivo, r.nome_arrivo),
-        corse_osservate: corse,
-        in_ritardo: rit,
-        pct_ritardo: corse > 0 ? (rit / corse) * 100 : 0,
-        minuti_ritardo_tot: min
-      };
-    })
-    .filter((r) => r.corse_osservate > 0);
-
-  out.sort((a, b) => toNum(b.pct_ritardo) - toNum(a.pct_ritardo));
-  safeSetData(state.tables.od, out.slice(0, 200));
-  try {
-    if (state.tables.od) state.tables.od.setSort("pct_ritardo", "desc");
-  } catch {}
-}
-
-function renderCitiesTable() {
-  const useDay = useDailyAggregation() && state.data.stationsDayNode && state.data.stationsDayNode.length > 0;
-  const base = useDay ? state.data.stationsDayNode : state.data.stationsMonthNode;
-  const keyField = useDay ? "giorno" : "mese";
-
-  let rows = base || [];
-
-  if (state.filters.year !== "all") rows = rows.filter((r) => passYear(r, keyField));
-  if (state.filters.cat !== "all") rows = rows.filter(passCat);
-
-  if (useDay) rows = rows.filter((r) => passDayKey(r, "giorno"));
-  else if (hasDayFilter()) rows = rows.filter((r) => passMonthFromDayRange(r, "mese"));
-
-  const agg = new Map();
-
-  for (const r of rows) {
-    const code = String(r.cod_stazione || "").trim();
-    if (!code) continue;
-
-    const city = stationCity(code, r.nome_stazione || code);
-    if (!city) continue;
-
-    const k = capoluogoKey(city);
-    if (!k) continue;
-
-    if (!agg.has(k)) {
-      agg.set(k, {
-        city: prettyCityName(k, city),
-        corse_osservate: 0,
-        in_ritardo: 0,
-        minuti_ritardo_tot: 0,
-        cancellate_tot: 0,
-        soppresse: 0
-      });
-    }
-
-    const a = agg.get(k);
-    a.corse_osservate += toNum(r.corse_osservate);
-    a.in_ritardo += toNum(r.in_ritardo);
-    a.minuti_ritardo_tot += toNum(r.minuti_ritardo_tot);
-
-    const canc = r.cancellate_tot !== undefined && r.cancellate_tot !== "" ? r.cancellate_tot : r.cancellate;
-    a.cancellate_tot += toNum(canc);
-
-    a.soppresse += toNum(r.soppresse);
-  }
-
-  let out = Array.from(agg.values());
-  out.forEach((o) => (o.pct_ritardo = o.corse_osservate > 0 ? (o.in_ritardo / o.corse_osservate) * 100 : 0));
-
-  out.sort((a, b) => toNum(b.pct_ritardo) - toNum(a.pct_ritardo));
-  safeSetData(state.tables.cities, out.slice(0, 80));
-  try {
-    if (state.tables.cities) state.tables.cities.setSort("pct_ritardo", "desc");
-  } catch {}
+  Plotly.react(
+    chart,
+    [{
+      x: xValues,
+      y: yLabels,
+      type: "bar",
+      orientation: "h",
+      name: label,
+      marker: { color: "rgba(122, 162, 255, 0.75)" }
+    }],
+    {
+      margin: { l: 180, r: 30, t: 10, b: 50 },
+      xaxis: { title: label, rangemode: "tozero" },
+      yaxis: { automargin: true },
+      paper_bgcolor: "rgba(0,0,0,0)",
+      plot_bgcolor: "rgba(0,0,0,0)",
+      font: { color: "#e8eefc" }
+    },
+    { displayModeBar: false, responsive: true }
+  );
 }
 
 function mapMetricValue(row) {
@@ -1547,6 +1424,9 @@ function mapMetricValue(row) {
 
 function renderMap() {
   if (!state.map) return;
+
+  const mapEl = document.getElementById("map");
+  if (isCardCollapsed(mapEl)) return;
 
   clearMarkers();
 
@@ -1664,9 +1544,37 @@ function renderMap() {
 }
 
 function renderTables() {
-  renderStationsTable();
-  renderODTable();
-  renderCitiesTable();
+  renderStationsTop10();
+}
+
+function initCollapsibleCards() {
+  document.querySelectorAll(".card.collapsible").forEach(function(card) {
+    const toggle = card.querySelector(".card-toggle");
+    if (!toggle) return;
+
+    toggle.addEventListener("click", function() {
+      const collapsed = card.classList.toggle("card--collapsed");
+      toggle.textContent = collapsed ? "\u25B6" : "\u25BC";
+
+      if (!collapsed) {
+        const chartEl = card.querySelector(".chart, .map");
+        if (!chartEl) return;
+        const id = chartEl.id;
+        if (id === "chartDelayIndex" || id === "chartMonthly") renderSeries();
+        else if (id === "chartHist") renderHist();
+        else if (id === "map") {
+          renderMap();
+          setTimeout(function() { try { state.map.invalidateSize(); } catch {} }, 200);
+        } else if (id === "chartStationsTop10") renderStationsTop10();
+      }
+    });
+  });
+}
+
+function initStationsMetricSel() {
+  const sel = document.getElementById("stationsMetricSel");
+  if (!sel) return;
+  sel.onchange = function() { renderStationsTop10(); };
 }
 
 function renderAll() {
@@ -1795,9 +1703,10 @@ async function loadAll() {
 
   initFilters();
   initDayWeekTimeControls();
-  initTables();
   initMap();
   ensureHistToggle();
+  initCollapsibleCards();
+  initStationsMetricSel();
 
   renderAll();
 
