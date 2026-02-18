@@ -54,7 +54,7 @@ jobs:
 
       - name: Fail on unresolved merge markers
         run: |
-          if rg -n "<<<<<<<|=======|>>>>>>>" --glob "*.py" --glob "*.yml" --glob "*.yaml" .; then
+          if grep -rn "<<<<<<<\|=======\|>>>>>>>" --include="*.py" --include="*.yml" --include="*.yaml" .; then
             echo "Unresolved merge markers found" >&2
             exit 1
           fi
@@ -161,13 +161,13 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git add docs/data docs/.nojekyll stations || true
+          git add data/gold docs/ stations/ || true
 
           if git diff --cached --quiet; then
             echo "No changes to commit"
           else
             git commit -m "One-shot backfill bronze to gold/docs"
-            git pull --rebase origin "${GITHUB_REF_NAME}"
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}"
 
             for i in 1 2 3; do
               if git push origin "HEAD:${GITHUB_REF_NAME}"; then
