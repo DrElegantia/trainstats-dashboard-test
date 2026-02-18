@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import re
 import time
+import argparse
 from pathlib import Path
 from typing import Dict, Set, Optional, Tuple
 
@@ -188,7 +189,7 @@ def geocode_station(geolocator, name: str) -> Optional[Tuple[float, float]]:
     return None
 
 
-def build_station_dim() -> pd.DataFrame:
+def build_station_dim(enable_geocoding: bool = True) -> pd.DataFrame:
     """Costruisce la tabella dimensionale delle stazioni con coordinate.
 
     Strategia per assegnare le coordinate (in ordine di priorità):
@@ -218,12 +219,17 @@ def build_station_dim() -> pd.DataFrame:
         and _normalize_for_match(names.get(c, "")) not in name_coords
     ]
     geolocator = None
-    if codes_unresolved and HAS_GEOPY:
+    if codes_unresolved and enable_geocoding and HAS_GEOPY:
         print(f"Need to geocode {len(codes_unresolved)} stations...")
         geolocator = Nominatim(user_agent="trainstats-dashboard/1.0")
-    elif codes_unresolved and not HAS_GEOPY:
+    elif codes_unresolved and enable_geocoding and not HAS_GEOPY:
         print(f"WARNING: geopy not installed, {len(codes_unresolved)} stations "
               "without coordinates")
+    elif codes_unresolved and not enable_geocoding:
+        print(
+            f"Geocoding disabled, leaving {len(codes_unresolved)} stations "
+            "without coordinates"
+        )
 
     # ---- Stazioni trovate nel silver corrente ----
     records = []
@@ -304,8 +310,28 @@ def save_station_dim(df: pd.DataFrame) -> None:
     print(f"Total stations: {len(df)}, with coordinates: {coords_count}")
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Build station dimension table with optional geocoding"
+    )
+    parser.add_argument(
+        "--disable-geocoding",
+        action="store_true",
+        help="Do not query Nominatim for unresolved station names",
+    )
+    return parser.parse_args()
+
+
 def main() -> None:
-    df = build_station_dim()
+    args = parse_args()
+    # In CI prefer deterministic builds: avoid external geocoding unless explicitly enabled.
+    ci_default_disable = os.environ.get("GITHUB_ACTIONS", "").lower() == "true"
+    enable_geocoding = not (args.disable_geocoding or ci_default_disable)
+
+    if not enable_geocoding:
+        print("Running without online geocoding")
+
+    df = build_station_dim(enable_geocoding=enable_geocoding)
     if df.empty:
         print("Warning: No station data found in silver files")
         return
