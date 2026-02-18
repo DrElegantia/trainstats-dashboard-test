@@ -52,7 +52,7 @@ jobs:
 
       - name: Fail on unresolved merge markers
         run: |
-          if grep -rn "<<<<<<<\|=======\|>>>>>>>" --include="*.py" --include="*.yml" --include="*.yaml" .; then
+          if grep -rEn "^<<<<<<< |^=======$|^>>>>>>> " --include="*.py" --include="*.yml" --include="*.yaml" .; then
             echo "Unresolved merge markers found" >&2
             exit 1
           fi
