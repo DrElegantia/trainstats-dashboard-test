@@ -24,4 +24,11 @@ data/bronze/**/*.csv
 # GitHub Pages pubblica da docs
 site/
 
+# docs/data CSV files are never committed to git — they are deployed directly
+# via GitHub Actions Pages artifact (upload-pages-artifact). Committing them
+# would hit GitHub's 100 MB per-file limit as the dataset grows, and storing
+# them in LFS breaks GitHub Pages serving (Pages only serves LFS pointer files).
+docs/data/*.csv
+docs/data/manifest.json
+
 !.gitkeep
