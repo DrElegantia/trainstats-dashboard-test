@@ -1563,6 +1563,7 @@ function initCollapsibleCards() {
         if (id === "chartDelayIndex" || id === "chartMonthly") renderSeries();
         else if (id === "chartHist") renderHist();
         else if (id === "map") {
+          initMap();
           renderMap();
           setTimeout(function() { try { state.map.invalidateSize(); } catch {} }, 200);
         } else if (id === "chartStationsTop10") renderStationsTop10();
@@ -1703,7 +1704,12 @@ async function loadAll() {
 
   initFilters();
   initDayWeekTimeControls();
-  initMap();
+  const mapCardCollapsed = (function() {
+    const mapEl = document.getElementById("map");
+    const card = mapEl && mapEl.closest && mapEl.closest(".card");
+    return card && card.classList.contains("card--collapsed");
+  }());
+  if (!mapCardCollapsed) initMap();
   ensureHistToggle();
   initCollapsibleCards();
   initStationsMetricSel();
