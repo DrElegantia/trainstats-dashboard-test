@@ -18,6 +18,8 @@ on:
 
 permissions:
   contents: write
+  pages: write     # needed to deploy to GitHub Pages
+  id-token: write  # needed for OIDC token used by deploy-pages
 
 concurrency:
   group: pages
@@ -26,6 +28,9 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy_pages.outputs.page_url }}
 
     steps:
       - name: Checkout repository
@@ -116,7 +121,9 @@ jobs:
           git config user.name "github-actions"
           git config user.email "github-actions@users.noreply.github.com"
 
-          git add data/ docs/ stations/ || true
+          # docs/data/*.csv and manifest.json are gitignored: they are deployed
+          # via GitHub Actions Pages artifact, never committed to git.
+          git add data/ stations/ || true
 
           if git diff --cached --quiet; then
             echo "No changes to commit"
@@ -125,3 +132,17 @@ jobs:
             git pull --rebase --autostash origin "$BRANCH_NAME"
             git push origin "HEAD:$BRANCH_NAME"
           fi
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # Uploads the full docs/ directory (index.html + assets + freshly
+          # generated docs/data/ CSVs). Large CSVs are never committed to git.
+          path: docs/
+
+      - name: Deploy to GitHub Pages
+        id: deploy_pages
+        uses: actions/deploy-pages@v4

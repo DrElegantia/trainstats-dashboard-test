@@ -1,3 +1,4 @@
 # Store generated CSV artifacts in Git LFS to avoid GitHub size limits.
+# NOTE: docs/data/*.csv must NOT be in LFS — GitHub Pages cannot serve LFS objects,
+# it would serve the pointer file instead of the actual CSV data.
 data/gold/*.csv filter=lfs diff=lfs merge=lfs -text
-docs/data/*.csv filter=lfs diff=lfs merge=lfs -text
