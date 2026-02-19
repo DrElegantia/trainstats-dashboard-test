@@ -52,10 +52,14 @@ function ensureTrailingSlash(p) {
 
 const DATA_ROOT_CANDIDATES = ["data/", "./data/", "docs/data/", "site/data/"];
 
+function isLfsPointer(t) {
+  return typeof t === "string" && t.trimStart().startsWith("version https://git-lfs.github.com");
+}
+
 async function fetchTextAny(paths) {
   for (const p of paths) {
     const t = await fetchTextOrNull(p);
-    if (t && String(t).trim().length) return t;
+    if (t && String(t).trim().length && !isLfsPointer(t)) return t;
   }
   return null;
 }
@@ -98,7 +102,7 @@ async function pickDataBase() {
     const base = ensureTrailingSlash(base0);
     for (const p of probes) {
       const t = await fetchTextOrNull(base + p);
-      if (t && String(t).trim().length > 20) return base;
+      if (t && String(t).trim().length > 20 && !isLfsPointer(t)) return base;
     }
   }
   return "data/";
