@@ -28,6 +28,7 @@ HEAVY_DAILY_FILES = {
     "stazioni_giorno_categoria_nodo.csv",
     "stazioni_giorno_categoria_ruolo.csv",
     "hist_stazioni_giorno_categoria_ruolo.csv",
+    "hist_giorno_categoria.csv",
 }
 
 
