@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import os
-from datetime import date
+from datetime import date, timedelta
 from typing import Any, Dict, List, Optional, Set
 
 import pandas as pd
@@ -365,6 +365,12 @@ def gold_keys() -> Dict[str, List[str]]:
     }
 
 
+# Daily gold tables accumulate one row-group per day on every pipeline run.
+# Without a cap they grow without bound; 730 days (~2 years) keeps the CSVs
+# manageable while still covering any annual analysis the dashboard may need.
+_MAX_DAILY_DAYS = 730
+
+
 def save_gold_tables(tables: Dict[str, pd.DataFrame]) -> None:
     out_dir = os.path.join("data", "gold")
     ensure_dir(out_dir)
@@ -398,6 +404,17 @@ def save_gold_tables(tables: Dict[str, pd.DataFrame]) -> None:
             if miss:
                 raise RuntimeError(f"gold table {name} missing key columns {miss}")
             merged = merged.drop_duplicates(subset=k, keep="last").sort_values(k)
+
+            # Rolling cap: trim rows older than _MAX_DAILY_DAYS for tables that
+            # have a daily key ("giorno").  Monthly tables ("mese") are kept in full
+            # because they are already compact (one row per month per aggregation key).
+            if "giorno" in k:
+                cutoff = (date.today() - timedelta(days=_MAX_DAILY_DAYS)).isoformat()
+                before = len(merged)
+                merged = merged[merged["giorno"] >= cutoff]
+                dropped = before - len(merged)
+                if dropped:
+                    print(f"  {name}: trimmed {dropped} rows older than {cutoff} (rolling {_MAX_DAILY_DAYS}d cap)")
 
         merged.to_csv(path, index=False)
 
