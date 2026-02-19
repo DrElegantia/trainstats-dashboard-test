@@ -28,6 +28,7 @@ data/gold/od_giorno_categoria.csv
 data/gold/stazioni_giorno_categoria_ruolo.csv
 data/gold/stazioni_giorno_categoria_nodo.csv
 data/gold/hist_stazioni_giorno_categoria_ruolo.csv
+data/gold/hist_giorno_categoria.csv
 
 # GitHub Pages pubblica da docs
 site/
