@@ -131,8 +131,27 @@ jobs:
             echo "No changes to commit"
           else
             git commit -m "Automated daily data update"
-            git pull --rebase --autostash origin "$BRANCH_NAME"
-            git push origin "HEAD:$BRANCH_NAME"
+
+            # Never use --rebase with LFS-tracked files: git-lfs cannot apply
+            # LFS pointer patches during rebase and always fails with
+            # "Encountered N files that should have been pointers, but weren't".
+            # Use merge -X ours instead: our gold was built by reading the
+            # existing gold first, so it already subsumes the remote's data
+            # (concurrency group guarantees sequential execution).
+            for i in 1 2 3; do
+              if git push origin "HEAD:$BRANCH_NAME"; then
+                break
+              fi
+              if [ "$i" -eq 3 ]; then
+                echo "Push failed after 3 attempts" >&2
+                exit 1
+              fi
+              echo "Push failed (attempt $i), syncing with remote and retrying..."
+              git fetch origin "$BRANCH_NAME"
+              git merge -X ours "origin/$BRANCH_NAME" --no-edit
+              git lfs checkout data/gold/ || true
+              sleep 20
+            done
           fi
 
       - name: Setup Pages
