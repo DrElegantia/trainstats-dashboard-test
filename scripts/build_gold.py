@@ -375,8 +375,20 @@ def save_gold_tables(tables: Dict[str, pd.DataFrame]) -> None:
         path = os.path.join(out_dir, f"{name}.csv")
 
         if os.path.exists(path):
-            df_old = pd.read_csv(path)
-            merged = pd.concat([df_old, df_new], ignore_index=True)
+            try:
+                df_old = pd.read_csv(path)
+                first_col = str(df_old.columns[0]) if len(df_old.columns) > 0 else ""
+                if "git-lfs" in first_col:
+                    # File was corrupted: save_gold_tables previously read an LFS
+                    # pointer as CSV, leaving the pointer version line as column name.
+                    # Discard the garbage and start fresh from the new data only.
+                    print(f"  WARNING: {name}.csv is corrupted (LFS pointer as CSV header) — discarding stale data")
+                    merged = df_new.copy()
+                else:
+                    merged = pd.concat([df_old, df_new], ignore_index=True)
+            except Exception as e:
+                print(f"  WARNING: could not read {name}.csv ({e}) — starting fresh")
+                merged = df_new.copy()
         else:
             merged = df_new.copy()
 

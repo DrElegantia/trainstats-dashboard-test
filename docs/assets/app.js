@@ -53,7 +53,13 @@ function ensureTrailingSlash(p) {
 const DATA_ROOT_CANDIDATES = ["data/", "./data/", "docs/data/", "site/data/"];
 
 function isLfsPointer(t) {
-  return typeof t === "string" && t.trimStart().startsWith("version https://git-lfs.github.com");
+  if (typeof t !== "string") return false;
+  const trimmed = t.trimStart();
+  if (!trimmed.startsWith("version https://git-lfs.github.com")) return false;
+  // A real LFS pointer has exactly 3 lines with no commas on the version line.
+  // A corrupted CSV (produced when save_gold_tables reads a pointer as CSV) has
+  // comma-separated column names on the first line — treat that as real data.
+  return !trimmed.split("\n")[0].includes(",");
 }
 
 async function fetchTextAny(paths) {
