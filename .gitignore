@@ -21,6 +21,14 @@ data/bronze/**/*.csv
 !data/bronze/**/*.csv.gz
 !data/bronze/**/*.json
 
+# Heavy gold daily files (150–250 MB each) are never committed to git.
+# They exceed GitHub LFS free bandwidth (1 GB/month) when downloaded on every
+# CI run. They are rebuilt from silver in CI and uploaded directly to Pages.
+data/gold/od_giorno_categoria.csv
+data/gold/stazioni_giorno_categoria_ruolo.csv
+data/gold/stazioni_giorno_categoria_nodo.csv
+data/gold/hist_stazioni_giorno_categoria_ruolo.csv
+
 # GitHub Pages pubblica da docs
 site/
 
