@@ -152,18 +152,6 @@ def build_metrics(cfg: Dict[str, Any], df: pd.DataFrame) -> pd.DataFrame:
 
 
 def agg_core(group_cols: List[str], df: pd.DataFrame) -> pd.DataFrame:
-    def q90(x: pd.Series) -> float:
-        x = x.dropna()
-        if len(x) == 0:
-            return float("nan")
-        return float(x.quantile(0.9))
-
-    def q95(x: pd.Series) -> float:
-        x = x.dropna()
-        if len(x) == 0:
-            return float("nan")
-        return float(x.quantile(0.95))
-
     g = df.groupby(group_cols, dropna=False)
 
     out = g.agg(
@@ -186,9 +174,17 @@ def agg_core(group_cols: List[str], df: pd.DataFrame) -> pd.DataFrame:
         minuti_netti_tot=("minuti_netti", "sum"),
         ritardo_medio=("ritardo_arrivo_min", "mean"),
         ritardo_mediano=("ritardo_arrivo_min", "median"),
-        p90=("ritardo_arrivo_min", q90),
-        p95=("ritardo_arrivo_min", q95),
     ).reset_index()
+
+    # Compute p90/p95 via the native Cython quantile path.
+    # Custom Python callbacks (the previous q90/q95 closures) are invoked once
+    # per group, which serialises the entire computation through the Python
+    # interpreter.  groupby.quantile() stays inside Cython and is orders of
+    # magnitude faster on large DataFrames with many groups.
+    q90_s = g["ritardo_arrivo_min"].quantile(0.9).rename("p90")
+    q95_s = g["ritardo_arrivo_min"].quantile(0.95).rename("p95")
+    q_df = pd.concat([q90_s, q95_s], axis=1).reset_index()
+    out = out.merge(q_df, on=group_cols, how="left")
 
     out["cancellate_tot"] = out["cancellate"].fillna(0).astype(int) + out["parzialmente_cancellate"].fillna(0).astype(int)
 
