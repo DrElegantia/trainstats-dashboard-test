@@ -522,16 +522,20 @@ function clearMarkers() {
 /* ────────────────── category label map ────────────────── */
 
 const CATEGORY_LABELS = {
-  "DIR": "DIR \u2013 Diretto",
-  "EC":  "EC \u2013 EuroCity",
-  "EN":  "EN \u2013 EuroNight",
-  "EXP": "EXP \u2013 Espresso",
-  "IC":  "IC \u2013 InterCity",
-  "ICN": "ICN \u2013 InterCity Notte",
-  "IR":  "IR \u2013 InterRegionale",
-  "MET": "MET \u2013 Metropolitano",
-  "NCL": "NCL \u2013 Notte cuccette",
-  "REG": "REG \u2013 Regionale"
+  "DIR":  "DIR \u2013 Diretto",
+  "EC":   "EC \u2013 EuroCity",
+  "ECFR": "ECFR \u2013 EuroCity FrecciaRossa",
+  "EN":   "EN \u2013 EuroNight",
+  "EXP":  "EXP \u2013 Espresso",
+  "FA":   "FA \u2013 Freccia Argento",
+  "FB":   "FB \u2013 Freccia Bianca",
+  "FR":   "FR \u2013 Freccia Rossa",
+  "IC":   "IC \u2013 InterCity",
+  "ICN":  "ICN \u2013 InterCity Notte",
+  "IR":   "IR \u2013 InterRegionale",
+  "MET":  "MET \u2013 Metropolitano",
+  "NCL":  "NCL \u2013 Notte cuccette",
+  "REG":  "REG \u2013 Regionale"
 };
 
 function categoryDisplayName(cat) {
@@ -576,7 +580,7 @@ function initFilters() {
   const monthTo   = document.getElementById("monthTo");
 
   const years = uniq(state.data.kpiMonth.map((r) => yearFromMonth(r.mese)).filter(Boolean)).sort();
-  const cats = uniq(state.data.kpiMonthCat.map((r) => String(r.categoria || "").trim()).filter(Boolean))
+  const cats = uniq(state.data.kpiMonthCat.map((r) => String(r.categoria || "").trim()).filter((c) => c && c !== "NaN"))
     .sort((a, b) => String(a).localeCompare(String(b), "it", { sensitivity: "base" }));
 
   if (yearSel) {
