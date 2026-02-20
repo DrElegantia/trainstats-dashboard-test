@@ -712,7 +712,7 @@ function initFilters() {
     depSel.onchange = () => {
       state.filters.dep = depSel.value || "all"; updateDepAliases();
       if (state.filters.dep !== "all") {
-        ensureOdData().then(renderAll);
+        Promise.all([ensureOdData(), ensureHistStationsData()]).then(renderAll);
       } else { renderAll(); }
     };
   }
@@ -724,7 +724,7 @@ function initFilters() {
     arrSel.onchange = () => {
       state.filters.arr = arrSel.value || "all"; updateArrAliases();
       if (state.filters.arr !== "all") {
-        ensureOdData().then(renderAll);
+        Promise.all([ensureOdData(), ensureHistStationsData()]).then(renderAll);
       } else { renderAll(); }
     };
   }
@@ -1068,9 +1068,21 @@ function renderHist() {
     const dep = state.filters.dep;
     const arr = state.filters.arr;
     if (arr !== "all") {
-      rows = rows.filter((r) => String(r.cod_stazione || "").trim() === arr && String(r.ruolo || "").trim() === "arrivo");
+      const aliases = state._arrAliases;
+      rows = rows.filter((r) => {
+        const code = String(r.cod_stazione || "").trim();
+        if (String(r.ruolo || "").trim() !== "arrivo") return false;
+        if (code === arr) return true;
+        return aliases ? aliases.has(code) : false;
+      });
     } else if (dep !== "all") {
-      rows = rows.filter((r) => String(r.cod_stazione || "").trim() === dep && String(r.ruolo || "").trim() === "partenza");
+      const aliases = state._depAliases;
+      rows = rows.filter((r) => {
+        const code = String(r.cod_stazione || "").trim();
+        if (String(r.ruolo || "").trim() !== "partenza") return false;
+        if (code === dep) return true;
+        return aliases ? aliases.has(code) : false;
+      });
     }
   }
 
