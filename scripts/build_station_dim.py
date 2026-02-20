@@ -299,12 +299,15 @@ def build_station_dim(enable_geocoding: bool = True) -> pd.DataFrame:
 
 
 def _deduplicate_by_name(df: pd.DataFrame) -> pd.DataFrame:
-    """Deduplica stazioni con lo stesso nome ma codici diversi.
+    """Propaga coordinate tra stazioni con lo stesso nome ma codici diversi.
 
-    Per ogni gruppo di stazioni con lo stesso nome (normalizzato), mantiene
-    il record che ha coordinate. Se più record hanno coordinate, mantiene il
-    primo in ordine di codice. Aggiunge una colonna 'alias_codes' con tutti
-    i codici alternativi.
+    NON rimuove righe: mantiene TUTTI i codici stazione nell'output in modo
+    che il frontend possa risolvere qualsiasi codice (anche quelli storici
+    come N_xxx sostituiti da S0xxxx).
+
+    Per ogni gruppo di stazioni con lo stesso nome normalizzato, se almeno un
+    record ha coordinate valide, le propaga a tutti i record del gruppo che
+    ne sono privi.
     """
     if df.empty:
         return df
@@ -312,26 +315,29 @@ def _deduplicate_by_name(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     df["_name_key"] = df["nome_stazione"].apply(_normalize_for_match)
 
-    groups = df.groupby("_name_key", dropna=False)
-    keep_indices = []
-
-    for _, group in groups:
-        if len(group) == 1:
-            keep_indices.append(group.index[0])
+    # Build lookup: normalized name -> best (lat, lon) from any record in group
+    best_coords: Dict[str, Tuple[float, float]] = {}
+    for _, row in df.iterrows():
+        key = row["_name_key"]
+        if not key:
             continue
-        # Prefer records with coordinates
-        with_coords = group[group["lat"].notna() & group["lon"].notna()]
-        if not with_coords.empty:
-            keep_indices.append(with_coords.index[0])
-        else:
-            keep_indices.append(group.index[0])
+        lat, lon = row.get("lat"), row.get("lon")
+        if pd.notna(lat) and pd.notna(lon) and key not in best_coords:
+            best_coords[key] = (float(lat), float(lon))
 
-    result = df.loc[keep_indices].drop(columns=["_name_key"])
-    before = len(df)
-    after = len(result)
-    if before != after:
-        print(f"Deduplication by name: {before} -> {after} stations ({before - after} duplicates removed)")
-    return result.reset_index(drop=True)
+    # Propagate coordinates to records missing them
+    propagated = 0
+    for idx, row in df.iterrows():
+        key = row["_name_key"]
+        if key and (pd.isna(row["lat"]) or pd.isna(row["lon"])) and key in best_coords:
+            df.at[idx, "lat"] = best_coords[key][0]
+            df.at[idx, "lon"] = best_coords[key][1]
+            propagated += 1
+
+    if propagated > 0:
+        print(f"Coordinate propagation: {propagated} stations received coords from same-name entries")
+
+    return df.drop(columns=["_name_key"]).reset_index(drop=True)
 
 
 def save_station_dim(df: pd.DataFrame) -> None:

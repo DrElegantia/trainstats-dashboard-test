@@ -540,7 +540,8 @@ function initToggleControls() {
     b.onclick = () => {
       state.filters.day_types[i] = !state.filters.day_types[i];
       b.classList.toggle("off", !state.filters.day_types[i]);
-      renderAll();
+      if (hasDetailFilter()) { ensureDetailData().then(renderAll); }
+      else { renderAll(); }
     };
     dayTypeWrap.appendChild(b);
   });
@@ -556,7 +557,8 @@ function initToggleControls() {
     b.onclick = () => {
       state.filters.time_slots[i] = !state.filters.time_slots[i];
       b.classList.toggle("off", !state.filters.time_slots[i]);
-      renderAll();
+      if (hasDetailFilter()) { ensureDetailData().then(renderAll); }
+      else { renderAll(); }
     };
     timeSlotWrap.appendChild(b);
   });
@@ -682,8 +684,8 @@ function initFilters() {
   }
 
   let deps, arrs;
-  if (isMobile() && !(state.data.odMonthCat && state.data.odMonthCat.length)) {
-    // On mobile, od data may not be loaded yet; use stationsRef for dropdown lists
+  if (!(state.data.odMonthCat && state.data.odMonthCat.length)) {
+    // OD data not loaded yet; use stationsRef for dropdown lists
     const allCodes = Array.from(state.stationsRef.keys());
     deps = allCodes;
     arrs = allCodes;
@@ -709,7 +711,7 @@ function initFilters() {
     depSel.value = state.filters.dep || "all";
     depSel.onchange = () => {
       state.filters.dep = depSel.value || "all"; updateDepAliases();
-      if (isMobile() && state.filters.dep !== "all") {
+      if (state.filters.dep !== "all") {
         ensureOdData().then(renderAll);
       } else { renderAll(); }
     };
@@ -721,7 +723,7 @@ function initFilters() {
     arrSel.value = state.filters.arr || "all";
     arrSel.onchange = () => {
       state.filters.arr = arrSel.value || "all"; updateArrAliases();
-      if (isMobile() && state.filters.arr !== "all") {
+      if (state.filters.arr !== "all") {
         ensureOdData().then(renderAll);
       } else { renderAll(); }
     };
@@ -1290,6 +1292,13 @@ async function ensureHistStationsData() {
   await lazyLoadCSV("hist_stazioni_mese_categoria_ruolo.csv", "histStationsMonthRuolo");
 }
 
+async function ensureDetailData() {
+  await Promise.all([
+    lazyLoadCSV("kpi_dettaglio_categoria.csv", "kpiDetailCat"),
+    lazyLoadCSV("hist_dettaglio_categoria.csv", "histDetailCat")
+  ]);
+}
+
 /* ────────────────── collapsible cards ────────────────── */
 
 function initCollapsibleCards() {
@@ -1305,20 +1314,16 @@ function initCollapsibleCards() {
         const id = chartEl.id;
         if (id === "chartDelayIndex" || id === "chartMonthly") renderSeries();
         else if (id === "chartHist") {
-          if (isMobile() && hasStationFilter()) {
+          if (hasStationFilter()) {
             ensureHistStationsData().then(renderHist);
           } else { renderHist(); }
         }
         else if (id === "map") {
           initMap();
-          if (isMobile()) {
-            ensureStationsData().then(function() { renderMap(); setTimeout(function(){ try{state.map.invalidateSize();}catch{} },200); });
-          } else { renderMap(); setTimeout(function(){ try{state.map.invalidateSize();}catch{} },200); }
+          ensureStationsData().then(function() { renderMap(); setTimeout(function(){ try{state.map.invalidateSize();}catch{} },200); });
         }
         else if (id === "chartStationsTop10") {
-          if (isMobile()) {
-            ensureStationsData().then(renderStationsTop10);
-          } else { renderStationsTop10(); }
+          ensureStationsData().then(renderStationsTop10);
         }
       }
     });
@@ -1379,14 +1384,15 @@ async function loadAll() {
   state.manifest = man || safeManifestDefaults();
 
   const built = state.manifest && state.manifest.built_at_utc ? state.manifest.built_at_utc : "";
-  setMeta((built ? "Build: " + built : "Build: sconosciuta") + " | base: " + base);
+  setMeta(built ? "Aggiornamento: " + built : "Caricamento...");
 
   const files = state.manifest && Array.isArray(state.manifest.gold_files) && state.manifest.gold_files.length
     ? state.manifest.gold_files : safeManifestDefaults().gold_files;
 
-  // On mobile, skip heavy files (>1 MB) to avoid crashing the browser.
-  // They will be lazy-loaded on demand when the user expands a card.
-  const HEAVY_FILES_MOBILE = new Set([
+  // Skip heavy files on initial load (both mobile and desktop).
+  // They will be lazy-loaded on demand when the user expands a card
+  // or activates a filter that needs them.
+  const HEAVY_FILES = new Set([
     "od_mese_categoria.csv",               // ~10 MB
     "od_dettaglio_categoria.csv",           // ~42 MB
     "hist_stazioni_mese_categoria_ruolo.csv",  // ~12 MB
@@ -1418,8 +1424,8 @@ async function loadAll() {
     "hist_stazioni_dettaglio_categoria_ruolo.csv"
   ]);
 
-  // On mobile, only fetch lightweight files
-  const toFetch = mobile ? wanted.filter((f) => !HEAVY_FILES_MOBILE.has(f)) : wanted;
+  // Only fetch lightweight files at startup; heavy ones are lazy-loaded
+  const toFetch = wanted.filter((f) => !HEAVY_FILES.has(f));
 
   const texts = await Promise.all(toFetch.map((f) => fetchTextAny(candidateFilePaths(base, f))));
 
@@ -1430,16 +1436,16 @@ async function loadAll() {
 
   state.data.kpiMonth              = parsed["kpi_mese.csv"] || [];
   state.data.kpiMonthCat           = parsed["kpi_mese_categoria.csv"] || [];
-  state.data.kpiDetail             = mobile ? [] : (parsed["kpi_dettaglio.csv"] || []);
-  state.data.kpiDetailCat          = mobile ? [] : (parsed["kpi_dettaglio_categoria.csv"] || []);
+  state.data.kpiDetail             = parsed["kpi_dettaglio.csv"] || [];
+  state.data.kpiDetailCat          = parsed["kpi_dettaglio_categoria.csv"] || [];
   state.data.histMonthCat          = parsed["hist_mese_categoria.csv"] || [];
-  state.data.histDetailCat         = mobile ? [] : (parsed["hist_dettaglio_categoria.csv"] || []);
+  state.data.histDetailCat         = parsed["hist_dettaglio_categoria.csv"] || [];
   state.data.stationsMonthNode     = parsed["stazioni_mese_categoria_nodo.csv"] || [];
-  state.data.stationsDetailNode    = mobile ? [] : (parsed["stazioni_dettaglio_categoria_nodo.csv"] || []);
+  state.data.stationsDetailNode    = parsed["stazioni_dettaglio_categoria_nodo.csv"] || [];
   state.data.odMonthCat            = parsed["od_mese_categoria.csv"] || [];
-  state.data.odDetailCat           = mobile ? [] : (parsed["od_dettaglio_categoria.csv"] || []);
+  state.data.odDetailCat           = parsed["od_dettaglio_categoria.csv"] || [];
   state.data.histStationsMonthRuolo  = parsed["hist_stazioni_mese_categoria_ruolo.csv"] || [];
-  state.data.histStationsDetailRuolo = mobile ? [] : (parsed["hist_stazioni_dettaglio_categoria_ruolo.csv"] || []);
+  state.data.histStationsDetailRuolo = parsed["hist_stazioni_dettaglio_categoria_ruolo.csv"] || [];
 
   const stRows = await loadStationsDimAnyBase(base);
   state.stationsRef.clear();
@@ -1514,16 +1520,12 @@ async function loadAll() {
     (state.data.histMonthCat && state.data.histMonthCat.length);
 
   const coordCount = Array.from(state.stationsRef.values()).filter((s) => Number.isFinite(s.lat) && Number.isFinite(s.lon)).length;
+  console.log("Data stats: mese cat=" + (state.data.kpiMonthCat ? state.data.kpiMonthCat.length : 0) +
+    ", dettaglio cat=" + (state.data.kpiDetailCat ? state.data.kpiDetailCat.length : 0) +
+    ", stazioni dim=" + stRows.length + ", coord=" + coordCount);
 
-  const metaExtra =
-    " | mese cat: " + (state.data.kpiMonthCat ? state.data.kpiMonthCat.length : 0) +
-    " | dettaglio cat: " + (state.data.kpiDetailCat ? state.data.kpiDetailCat.length : 0) +
-    " | stazioni dim: " + stRows.length +
-    " | stazioni coord: " + coordCount +
-    (stationDimBuilt ? " | stations_dim build: " + stationDimBuilt : "");
-
-  if (!haveAny) setMeta("Errore: non trovo CSV validi. Base: " + base + metaExtra);
-  else setMeta((built ? "Build: " + built : "Build: sconosciuta") + " | base: " + base + metaExtra);
+  if (!haveAny) setMeta("Errore: non trovo dati validi");
+  else setMeta(built ? "Aggiornamento: " + built : "");
 }
 
 loadAll().catch((err) => {
