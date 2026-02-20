@@ -112,6 +112,27 @@ def build_metrics(cfg: Dict[str, Any], df: pd.DataFrame) -> pd.DataFrame:
     df["anno"] = df["dt_partenza_prog"].dt.year.astype("Int64")
     df["ora"] = df["dt_partenza_prog"].dt.strftime("%H:00")
 
+    dow = df["dt_partenza_prog"].dt.dayofweek
+    df["tipo_giorno"] = dow.apply(lambda x: "weekend" if pd.notna(x) and int(x) >= 5 else "infrasettimanale")
+
+    hour = df["dt_partenza_prog"].dt.hour
+
+    def _time_slot(h: Any) -> str:
+        if pd.isna(h):
+            return "missing"
+        hh = int(h)
+        if 6 <= hh < 9:
+            return "mattina"
+        if 9 <= hh < 14:
+            return "tarda_mattina"
+        if 14 <= hh < 18:
+            return "pomeriggio"
+        if 18 <= hh < 22:
+            return "sera"
+        return "notte"
+
+    df["fascia_oraria"] = hour.apply(_time_slot)
+
     df["ritardo_partenza_min"] = pd.to_numeric(df["ritardo_partenza_min"], errors="coerce")
     df["ritardo_arrivo_min"] = pd.to_numeric(df["ritardo_arrivo_min"], errors="coerce")
 
@@ -197,6 +218,7 @@ def build_gold(cfg: Dict[str, Any], df: pd.DataFrame) -> Dict[str, pd.DataFrame]
 
     out["kpi_giorno_categoria"] = agg_core(["giorno", "ora", "categoria"], df)
     out["kpi_mese_categoria"] = agg_core(["mese", "categoria"], df)
+    out["kpi_mese_categoria_segmenti"] = agg_core(["mese", "categoria", "tipo_giorno", "fascia_oraria"], df)
     out["kpi_giorno"] = agg_core(["giorno", "ora"], df)
     out["kpi_mese"] = agg_core(["mese"], df)
 
@@ -206,6 +228,13 @@ def build_gold(cfg: Dict[str, Any], df: pd.DataFrame) -> Dict[str, pd.DataFrame]
         minuti_anticipo=("minuti_anticipo", "sum"),
     ).reset_index()
     out["hist_mese_categoria"] = h_m
+
+    h_m_seg = df.groupby(["mese", "categoria", "tipo_giorno", "fascia_oraria", "bucket_ritardo_arrivo"], dropna=False).agg(
+        count=("_obs_id", "count"),
+        minuti_ritardo=("minuti_ritardo", "sum"),
+        minuti_anticipo=("minuti_anticipo", "sum"),
+    ).reset_index()
+    out["hist_mese_categoria_segmenti"] = h_m_seg
 
     h_d = df.groupby(["giorno", "ora", "categoria", "bucket_ritardo_arrivo"], dropna=False).agg(
         count=("_obs_id", "count"),
@@ -246,6 +275,7 @@ def build_gold(cfg: Dict[str, Any], df: pd.DataFrame) -> Dict[str, pd.DataFrame]
     out["hist_stazioni_giorno_categoria_ruolo"] = h_st_d
 
     od_m = agg_core(["mese", "categoria", "cod_partenza", "cod_arrivo"], df)
+    od_m_seg = agg_core(["mese", "categoria", "tipo_giorno", "fascia_oraria", "cod_partenza", "cod_arrivo"], df)
     od_d = agg_core(["giorno", "ora", "categoria", "cod_partenza", "cod_arrivo"], df)
 
     part_names = df.dropna(subset=["cod_partenza"]).drop_duplicates("cod_partenza").set_index("cod_partenza")["nome_partenza"]
@@ -255,7 +285,11 @@ def build_gold(cfg: Dict[str, Any], df: pd.DataFrame) -> Dict[str, pd.DataFrame]
         od["nome_partenza"] = od["cod_partenza"].map(part_names).fillna("")
         od["nome_arrivo"] = od["cod_arrivo"].map(arr_names).fillna("")
 
+    od_m_seg["nome_partenza"] = od_m_seg["cod_partenza"].map(part_names).fillna("")
+    od_m_seg["nome_arrivo"] = od_m_seg["cod_arrivo"].map(arr_names).fillna("")
+
     out["od_mese_categoria"] = od_m
+    out["od_mese_categoria_segmenti"] = od_m_seg
     out["od_giorno_categoria"] = od_d
 
     dep_src = df.rename(columns={"cod_partenza": "cod_stazione"})
@@ -270,6 +304,16 @@ def build_gold(cfg: Dict[str, Any], df: pd.DataFrame) -> Dict[str, pd.DataFrame]
     arr_m["nome_stazione"] = arr_m["cod_stazione"].map(arr_names).fillna("")
 
     out["stazioni_mese_categoria_ruolo"] = pd.concat([dep_m, arr_m], ignore_index=True)
+
+    dep_m_seg = agg_core(["mese", "categoria", "tipo_giorno", "fascia_oraria", "cod_stazione"], dep_src)
+    dep_m_seg["ruolo"] = "partenza"
+    dep_m_seg["nome_stazione"] = dep_m_seg["cod_stazione"].map(part_names).fillna("")
+
+    arr_m_seg = agg_core(["mese", "categoria", "tipo_giorno", "fascia_oraria", "cod_stazione"], arr_src)
+    arr_m_seg["ruolo"] = "arrivo"
+    arr_m_seg["nome_stazione"] = arr_m_seg["cod_stazione"].map(arr_names).fillna("")
+
+    out["stazioni_mese_categoria_ruolo_segmenti"] = pd.concat([dep_m_seg, arr_m_seg], ignore_index=True)
 
     dep_d = agg_core(["giorno", "ora", "categoria", "cod_stazione"], dep_src)
     dep_d["ruolo"] = "partenza"
@@ -312,6 +356,36 @@ def build_gold(cfg: Dict[str, Any], df: pd.DataFrame) -> Dict[str, pd.DataFrame]
     comb2_m["nome_stazione"] = comb2_m["cod_stazione"].map(name_any_m).fillna("")
     out["stazioni_mese_categoria_nodo"] = comb2_m
 
+    combined_m_seg = out["stazioni_mese_categoria_ruolo_segmenti"]
+    comb2_m_seg = combined_m_seg.groupby(["mese", "categoria", "tipo_giorno", "fascia_oraria", "cod_stazione"], dropna=False).agg(
+        corse_osservate=("corse_osservate", "sum"),
+        effettuate=("effettuate", "sum"),
+        cancellate=("cancellate", "sum"),
+        soppresse=("soppresse", "sum"),
+        parzialmente_cancellate=("parzialmente_cancellate", "sum"),
+        cancellate_tot=("cancellate_tot", "sum"),
+        info_mancante=("info_mancante", "sum"),
+        in_orario=("in_orario", "sum"),
+        in_ritardo=("in_ritardo", "sum"),
+        in_anticipo=("in_anticipo", "sum"),
+        oltre_5=("oltre_5", "sum"),
+        oltre_10=("oltre_10", "sum"),
+        oltre_15=("oltre_15", "sum"),
+        oltre_30=("oltre_30", "sum"),
+        oltre_60=("oltre_60", "sum"),
+        minuti_ritardo_tot=("minuti_ritardo_tot", "sum"),
+        minuti_anticipo_tot=("minuti_anticipo_tot", "sum"),
+        minuti_netti_tot=("minuti_netti_tot", "sum"),
+        ritardo_medio=("ritardo_medio", "mean"),
+        ritardo_mediano=("ritardo_mediano", "median"),
+        p90=("p90", "mean"),
+        p95=("p95", "mean"),
+    ).reset_index()
+    comb2_m_seg["ruolo"] = "nodo"
+    name_any_m_seg = combined_m_seg.dropna(subset=["cod_stazione"]).drop_duplicates("cod_stazione").set_index("cod_stazione")["nome_stazione"]
+    comb2_m_seg["nome_stazione"] = comb2_m_seg["cod_stazione"].map(name_any_m_seg).fillna("")
+    out["stazioni_mese_categoria_nodo_segmenti"] = comb2_m_seg
+
     combined_d = out["stazioni_giorno_categoria_ruolo"]
     comb2_d = combined_d.groupby(["giorno", "ora", "categoria", "cod_stazione"], dropna=False).agg(
         corse_osservate=("corse_osservate", "sum"),
@@ -350,16 +424,21 @@ def gold_keys() -> Dict[str, List[str]]:
     return {
         "kpi_giorno_categoria": ["giorno", "ora", "categoria"],
         "kpi_mese_categoria": ["mese", "categoria"],
+        "kpi_mese_categoria_segmenti": ["mese", "categoria", "tipo_giorno", "fascia_oraria"],
         "kpi_giorno": ["giorno", "ora"],
         "kpi_mese": ["mese"],
         "hist_mese_categoria": ["mese", "categoria", "bucket_ritardo_arrivo"],
+        "hist_mese_categoria_segmenti": ["mese", "categoria", "tipo_giorno", "fascia_oraria", "bucket_ritardo_arrivo"],
         "hist_giorno_categoria": ["giorno", "ora", "categoria", "bucket_ritardo_arrivo"],
         "hist_stazioni_mese_categoria_ruolo": ["mese", "categoria", "cod_stazione", "ruolo", "bucket_ritardo_arrivo"],
         "hist_stazioni_giorno_categoria_ruolo": ["giorno", "ora", "categoria", "cod_stazione", "ruolo", "bucket_ritardo_arrivo"],
         "od_mese_categoria": ["mese", "categoria", "cod_partenza", "cod_arrivo"],
+        "od_mese_categoria_segmenti": ["mese", "categoria", "tipo_giorno", "fascia_oraria", "cod_partenza", "cod_arrivo"],
         "od_giorno_categoria": ["giorno", "ora", "categoria", "cod_partenza", "cod_arrivo"],
         "stazioni_mese_categoria_ruolo": ["mese", "categoria", "cod_stazione", "ruolo"],
+        "stazioni_mese_categoria_ruolo_segmenti": ["mese", "categoria", "tipo_giorno", "fascia_oraria", "cod_stazione", "ruolo"],
         "stazioni_mese_categoria_nodo": ["mese", "categoria", "cod_stazione"],  # ✅ CORRETTO - senza ruolo
+        "stazioni_mese_categoria_nodo_segmenti": ["mese", "categoria", "tipo_giorno", "fascia_oraria", "cod_stazione"],
         "stazioni_giorno_categoria_ruolo": ["giorno", "ora", "categoria", "cod_stazione", "ruolo"],
         "stazioni_giorno_categoria_nodo": ["giorno", "ora", "categoria", "cod_stazione"],  # ✅ CORRETTO - senza ruolo
     }
