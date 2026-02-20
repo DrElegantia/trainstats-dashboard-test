@@ -53,7 +53,7 @@ def read_bronze(csv_gz: str, meta_path: str) -> pd.DataFrame:
     extracted_at = str(meta.get("extracted_at_utc", ""))
 
     with gzip.open(csv_gz, "rb") as f:
-        df = pd.read_csv(f, dtype=str)
+        df = pd.read_csv(f, dtype=str, on_bad_lines="skip")
 
     df["_extracted_at_utc"] = extracted_at
     df["_bronze_path"] = csv_gz
