@@ -20,27 +20,29 @@ body {
 .topbar {
   display: flex;
   justify-content: space-between;
-  align-items: flex-end;
-  padding: 18px 18px 10px 18px;
+  align-items: center;
+  padding: 18px 18px 12px 18px;
   border-bottom: 1px solid var(--border);
 }
 
 .title h1 {
   margin: 0;
-  font-size: 20px;
+  font-size: 22px;
   letter-spacing: 0.3px;
+  font-weight: 700;
 }
 
 .subtitle {
-  margin-top: 6px;
+  margin-top: 4px;
   font-size: 12px;
   color: var(--muted);
 }
 
 .meta {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--muted);
   text-align: right;
+  opacity: 0.7;
 }
 
 .panel {
@@ -66,11 +68,11 @@ body {
 }
 
 .filters-row--primary {
-  grid-template-columns: repeat(6, minmax(120px, 1fr));
+  grid-template-columns: repeat(5, minmax(120px, 1fr)) auto;
 }
 
 .filters-row--extra {
-  grid-template-columns: repeat(3, minmax(140px, 1fr));
+  grid-template-columns: minmax(200px, 1.2fr) minmax(120px, 0.8fr) minmax(200px, 1fr);
 }
 
 .filters-divider {
@@ -121,6 +123,11 @@ button:hover {
 }
 
 /* --- Reset button --- */
+.filter--action {
+  display: flex;
+  align-items: flex-end;
+}
+
 #resetBtn {
   display: inline-flex;
   align-items: center;
@@ -128,6 +135,8 @@ button:hover {
   gap: 5px;
   font-weight: 600;
   letter-spacing: 0.3px;
+  width: auto;
+  padding: 9px 18px;
 }
 
 .reset-icon {
@@ -166,20 +175,28 @@ button:hover {
 }
 
 .kpi {
-  padding: 12px;
+  padding: 14px 16px;
   background: rgba(15, 23, 48, 0.7);
   border: 1px solid var(--border);
   border-radius: 12px;
+  transition: border-color 0.2s;
+}
+
+.kpi:hover {
+  border-color: rgba(122, 162, 255, 0.2);
 }
 
 .kpiLabel {
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
   color: var(--muted);
 }
 
 .kpiValue {
-  margin-top: 8px;
-  font-size: 20px;
+  margin-top: 6px;
+  font-size: 22px;
   font-weight: 700;
   color: var(--accent);
 }
@@ -191,10 +208,15 @@ button:hover {
 }
 
 .card {
-  padding: 12px;
+  padding: 14px 16px;
   background: rgba(15, 23, 48, 0.72);
   border: 1px solid var(--border);
   border-radius: 12px;
+  transition: border-color 0.2s;
+}
+
+.card:hover {
+  border-color: rgba(255,255,255,0.12);
 }
 
 .card h2 {
@@ -338,33 +360,35 @@ button:hover {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 24px;
-  height: 24px;
-  padding: 0 7px;
+  min-width: 30px;
+  height: 28px;
+  padding: 0 10px;
   border-radius: 999px;
   border: 1px solid rgba(122, 162, 255, 0.6);
   background: rgba(122, 162, 255, 0.15);
   color: var(--text);
   cursor: pointer;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   white-space: nowrap;
   transition: all 0.2s ease;
+  letter-spacing: 0.2px;
 }
 
 .toggle-pill:hover {
-  background: rgba(122, 162, 255, 0.25);
-  border-color: rgba(122, 162, 255, 0.8);
+  background: rgba(122, 162, 255, 0.30);
+  border-color: rgba(122, 162, 255, 0.9);
+  box-shadow: 0 0 8px rgba(122, 162, 255, 0.15);
 }
 
 .toggle-pill.off {
-  opacity: 0.35;
-  border-color: rgba(255,255,255,0.2);
+  opacity: 0.38;
+  border-color: rgba(255,255,255,0.18);
   background: transparent;
 }
 
 .toggle-pill.off:hover {
-  opacity: 0.55;
+  opacity: 0.6;
   border-color: rgba(255,255,255,0.4);
 }
 
@@ -376,6 +400,7 @@ button:hover {
   .kpis { grid-template-columns: 1fr 1fr; }
   .grid2 { grid-template-columns: 1fr; }
   .chart, .map { height: 300px; }
+  #resetBtn { width: 100%; }
 }
 
 @media (max-width: 600px) {
@@ -402,7 +427,7 @@ button:hover {
   .month-sep { display: none; }
   .info-tip[data-tooltip]:hover::after,
   .info-tip.tip-active[data-tooltip]::after { max-width: 200px; min-width: 120px; font-size: 10px; left: 0; transform: none; }
-  .toggle-pill { min-width: 22px; height: 22px; font-size: 10px; padding: 0 5px; }
+  .toggle-pill { min-width: 24px; height: 24px; font-size: 10px; padding: 0 6px; }
 }
 
 @media (max-width: 380px) {
