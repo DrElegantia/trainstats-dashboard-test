@@ -71,6 +71,8 @@ async function fetchJsonAny(paths) {
 
 function uniq(arr) { return Array.from(new Set(arr)); }
 
+function isMobile() { return window.innerWidth <= 600; }
+
 function candidateFilePaths(root, rel) {
   const r = ensureTrailingSlash(root);
   const clean = String(rel || "").replace(/^\/+/, "");
@@ -241,6 +243,10 @@ const state = {
   },
   stationsRef: new Map(),
   capoluoghiSet: new Set(),
+  _depItems: [],
+  _arrItems: [],
+  _depAliases: null,  // Set of all codes for selected dep station
+  _arrAliases: null,  // Set of all codes for selected arr station
   map: null,
   markers: [],
   filters: {
@@ -284,13 +290,46 @@ function stationCoords(code) {
   return { lat, lon };
 }
 
+/**
+ * Deduplicate stations: group codes sharing the same name,
+ * keep one representative code per name (prefer codes with coordinates).
+ */
 function buildStationItems(codes) {
-  const items = (codes || []).map((code) => {
+  const byName = new Map();
+  for (const code of (codes || [])) {
     const name = stationName(code, code);
-    return { code, name, needle: normalizeText(name + " " + code) };
-  });
+    const key = normalizeText(name);
+    if (!byName.has(key)) {
+      byName.set(key, { code, name, codes: [code] });
+    } else {
+      const entry = byName.get(key);
+      entry.codes.push(code);
+      // prefer a code that has coordinates
+      const curCoords = stationCoords(entry.code);
+      const newCoords = stationCoords(code);
+      if (!curCoords && newCoords) {
+        entry.code = code;
+        entry.name = name;
+      }
+    }
+  }
+  const items = Array.from(byName.values()).map((e) => ({
+    code: e.code, name: e.name, codes: e.codes,
+    needle: normalizeText(e.name + " " + e.codes.join(" "))
+  }));
   items.sort((a, b) => a.name.localeCompare(b.name, "it", { sensitivity: "base" }));
   return items;
+}
+
+/* Map: station name (normalized) -> array of all codes sharing that name */
+function buildNameToCodesMap() {
+  const map = new Map();
+  for (const [code, ref] of state.stationsRef) {
+    const key = normalizeText(ref.name || code);
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(code);
+  }
+  return map;
 }
 
 function fillStationSelect(selectEl, items, query) {
@@ -301,7 +340,7 @@ function fillStationSelect(selectEl, items, query) {
   selectEl.appendChild(new Option("Tutte", "all"));
   for (const it of items) {
     if (q && !it.needle.includes(q)) continue;
-    selectEl.appendChild(new Option(it.name + " (" + it.code + ")", it.code));
+    selectEl.appendChild(new Option(it.name, it.code));
   }
   const stillThere = Array.from(selectEl.options).some((o) => o.value === cur);
   selectEl.value = stillThere ? cur : "all";
@@ -344,12 +383,18 @@ function passCat(r) {
 
 function passDep(r) {
   if (state.filters.dep === "all") return true;
-  return String(r.cod_partenza || "").trim() === state.filters.dep;
+  const code = String(r.cod_partenza || "").trim();
+  if (code === state.filters.dep) return true;
+  const aliases = state._depAliases;
+  return aliases ? aliases.has(code) : false;
 }
 
 function passArr(r) {
   if (state.filters.arr === "all") return true;
-  return String(r.cod_arrivo || "").trim() === state.filters.arr;
+  const code = String(r.cod_arrivo || "").trim();
+  if (code === state.filters.arr) return true;
+  const aliases = state._arrAliases;
+  return aliases ? aliases.has(code) : false;
 }
 
 function passYear(r, field) {
@@ -359,16 +404,19 @@ function passYear(r, field) {
 
 function passMonthRange(r, field) {
   if (!hasMonthRange()) return true;
-  const m = String(r[field] || "").slice(0, 7);
-  if (!m) return false;
+  // Extract month number (MM) from YYYY-MM field
+  const raw = String(r[field] || "").slice(5, 7);
+  if (!raw) return false;
+  const mm = parseInt(raw, 10);
+  if (!mm) return false;
 
-  const from = String(state.filters.month_from || "").trim();
-  const to   = String(state.filters.month_to || "").trim();
+  const from = parseInt(state.filters.month_from || "0", 10);
+  const to   = parseInt(state.filters.month_to || "0", 10);
   const a = from || to;
   const b = to || from;
-  const lo = a <= b ? a : b;
-  const hi = a <= b ? b : a;
-  return m >= lo && m <= hi;
+  const lo = Math.min(a, b);
+  const hi = Math.max(a, b);
+  return mm >= lo && mm <= hi;
 }
 
 function passDetailDimensions(r) {
@@ -400,11 +448,13 @@ function initToggleControls() {
   if (dayTypeWrap.children.length) return;
 
   const dayLabels = ["I", "W"];
+  const dayTitles = ["Infrasettimanale (Lun\u2013Ven)", "Weekend (Sab\u2013Dom)"];
   dayLabels.forEach((label, i) => {
     const b = document.createElement("button");
     b.type = "button";
     b.className = "toggle-pill" + (state.filters.day_types[i] ? "" : " off");
     b.innerText = label;
+    b.title = dayTitles[i];
     b.onclick = () => {
       state.filters.day_types[i] = !state.filters.day_types[i];
       b.classList.toggle("off", !state.filters.day_types[i]);
@@ -414,11 +464,13 @@ function initToggleControls() {
   });
 
   const slotLabels = ["Ma", "TM", "Po", "Se", "No"];
+  const slotTitles = ["Mattina (6\u201308:59)", "Tarda mattina (9\u201313:59)", "Pomeriggio (14\u201317:59)", "Sera (18\u201321:59)", "Notte (22\u201305:59)"];
   slotLabels.forEach((label, i) => {
     const b = document.createElement("button");
     b.type = "button";
     b.className = "toggle-pill" + (state.filters.time_slots[i] ? "" : " off");
     b.innerText = label;
+    b.title = slotTitles[i];
     b.onclick = () => {
       state.filters.time_slots[i] = !state.filters.time_slots[i];
       b.classList.toggle("off", !state.filters.time_slots[i]);
@@ -467,6 +519,45 @@ function clearMarkers() {
 
 /* ────────────────── filters init ────────────────── */
 
+/* ────────────────── category label map ────────────────── */
+
+const CATEGORY_LABELS = {
+  "DIR": "DIR \u2013 Diretto",
+  "EC":  "EC \u2013 EuroCity",
+  "EN":  "EN \u2013 EuroNight",
+  "EXP": "EXP \u2013 Espresso",
+  "IC":  "IC \u2013 InterCity",
+  "ICN": "ICN \u2013 InterCity Notte",
+  "IR":  "IR \u2013 InterRegionale",
+  "MET": "MET \u2013 Metropolitano",
+  "NCL": "NCL \u2013 Notte cuccette",
+  "REG": "REG \u2013 Regionale"
+};
+
+function categoryDisplayName(cat) {
+  const c = String(cat || "").trim();
+  return CATEGORY_LABELS[c] || c;
+}
+
+/* ────────────────── month names ────────────────── */
+
+const MONTH_NAMES = [
+  "Gennaio","Febbraio","Marzo","Aprile","Maggio","Giugno",
+  "Luglio","Agosto","Settembre","Ottobre","Novembre","Dicembre"
+];
+
+function updateDepAliases() {
+  if (state.filters.dep === "all") { state._depAliases = null; return; }
+  const item = state._depItems.find((it) => it.code === state.filters.dep);
+  state._depAliases = item ? new Set(item.codes) : new Set([state.filters.dep]);
+}
+
+function updateArrAliases() {
+  if (state.filters.arr === "all") { state._arrAliases = null; return; }
+  const item = state._arrItems.find((it) => it.code === state.filters.arr);
+  state._arrAliases = item ? new Set(item.codes) : new Set([state.filters.arr]);
+}
+
 function initFilters() {
   const yearSel = firstEl(["yearSel", "annoSel", "year"]);
   const catSel = firstEl(["catSel", "categoriaSel", "category"]);
@@ -492,7 +583,7 @@ function initFilters() {
   if (catSel) {
     catSel.innerHTML = "";
     catSel.appendChild(new Option("Tutte", "all"));
-    cats.forEach((c) => catSel.appendChild(new Option(c, c)));
+    cats.forEach((c) => catSel.appendChild(new Option(categoryDisplayName(c), c)));
     catSel.value = state.filters.cat || "all";
     catSel.onchange = () => { state.filters.cat = catSel.value || "all"; renderAll(); };
   }
@@ -508,19 +599,21 @@ function initFilters() {
 
   const depItems = buildStationItems(deps);
   const arrItems = buildStationItems(arrs);
+  state._depItems = depItems;
+  state._arrItems = arrItems;
 
   if (depSel) {
     fillStationSelect(depSel, depItems, "");
     ensureSearchInput(depSel, "depSearch", "Cerca stazione di partenza", depItems);
     depSel.value = state.filters.dep || "all";
-    depSel.onchange = () => { state.filters.dep = depSel.value || "all"; renderAll(); };
+    depSel.onchange = () => { state.filters.dep = depSel.value || "all"; updateDepAliases(); renderAll(); };
   }
 
   if (arrSel) {
     fillStationSelect(arrSel, arrItems, "");
     ensureSearchInput(arrSel, "arrSearch", "Cerca stazione di arrivo", arrItems);
     arrSel.value = state.filters.arr || "all";
-    arrSel.onchange = () => { state.filters.arr = arrSel.value || "all"; renderAll(); };
+    arrSel.onchange = () => { state.filters.arr = arrSel.value || "all"; updateArrAliases(); renderAll(); };
   }
 
   if (mapMetricSel) {
@@ -528,11 +621,18 @@ function initFilters() {
     mapMetricSel.onchange = () => { renderSeries(); renderMap(); };
   }
 
+  // Month-only selects (1-12) instead of YYYY-MM inputs
   if (monthFrom) {
+    monthFrom.innerHTML = "";
+    monthFrom.appendChild(new Option("--", ""));
+    for (let i = 0; i < 12; i++) monthFrom.appendChild(new Option(MONTH_NAMES[i], String(i + 1).padStart(2, "0")));
     monthFrom.value = state.filters.month_from || "";
     monthFrom.onchange = () => { state.filters.month_from = monthFrom.value || ""; renderAll(); };
   }
   if (monthTo) {
+    monthTo.innerHTML = "";
+    monthTo.appendChild(new Option("--", ""));
+    for (let i = 0; i < 12; i++) monthTo.appendChild(new Option(MONTH_NAMES[i], String(i + 1).padStart(2, "0")));
     monthTo.value = state.filters.month_to || "";
     monthTo.onchange = () => { state.filters.month_to = monthTo.value || ""; renderAll(); };
   }
@@ -547,6 +647,8 @@ function initFilters() {
       state.filters.month_to = "";
       state.filters.day_types = [true, true];
       state.filters.time_slots = [true, true, true, true, true];
+      state._depAliases = null;
+      state._arrAliases = null;
 
       if (yearSel) yearSel.value = "all";
       if (catSel) catSel.value = "all";
@@ -1149,18 +1251,19 @@ async function loadAll() {
     parsed[wanted[i]] = texts[i] ? parseCSV(texts[i]) : [];
   }
 
+  const mobile = isMobile();
   state.data.kpiMonth              = parsed["kpi_mese.csv"] || [];
   state.data.kpiMonthCat           = parsed["kpi_mese_categoria.csv"] || [];
-  state.data.kpiDetail             = parsed["kpi_dettaglio.csv"] || [];
-  state.data.kpiDetailCat          = parsed["kpi_dettaglio_categoria.csv"] || [];
+  state.data.kpiDetail             = mobile ? [] : (parsed["kpi_dettaglio.csv"] || []);
+  state.data.kpiDetailCat          = mobile ? [] : (parsed["kpi_dettaglio_categoria.csv"] || []);
   state.data.histMonthCat          = parsed["hist_mese_categoria.csv"] || [];
-  state.data.histDetailCat         = parsed["hist_dettaglio_categoria.csv"] || [];
+  state.data.histDetailCat         = mobile ? [] : (parsed["hist_dettaglio_categoria.csv"] || []);
   state.data.stationsMonthNode     = parsed["stazioni_mese_categoria_nodo.csv"] || [];
-  state.data.stationsDetailNode    = parsed["stazioni_dettaglio_categoria_nodo.csv"] || [];
+  state.data.stationsDetailNode    = mobile ? [] : (parsed["stazioni_dettaglio_categoria_nodo.csv"] || []);
   state.data.odMonthCat            = parsed["od_mese_categoria.csv"] || [];
-  state.data.odDetailCat           = parsed["od_dettaglio_categoria.csv"] || [];
+  state.data.odDetailCat           = mobile ? [] : (parsed["od_dettaglio_categoria.csv"] || []);
   state.data.histStationsMonthRuolo  = parsed["hist_stazioni_mese_categoria_ruolo.csv"] || [];
-  state.data.histStationsDetailRuolo = parsed["hist_stazioni_dettaglio_categoria_ruolo.csv"] || [];
+  state.data.histStationsDetailRuolo = mobile ? [] : (parsed["hist_stazioni_dettaglio_categoria_ruolo.csv"] || []);
 
   const stRows = await loadStationsDimAnyBase(base);
   state.stationsRef.clear();
@@ -1183,6 +1286,20 @@ async function loadAll() {
     capRows.map((r) => normalizeText(r.citta || r.capoluogo || r.nome || r.city || "")).filter(Boolean)
   );
 
+  // Enable tap-to-show tooltips on mobile
+  document.querySelectorAll(".info-tip[data-tooltip]").forEach(function(tip) {
+    tip.addEventListener("click", function(e) {
+      e.stopPropagation();
+      // Toggle a "tapped" class to show tooltip on mobile
+      const isActive = tip.classList.contains("tip-active");
+      document.querySelectorAll(".info-tip.tip-active").forEach(function(t) { t.classList.remove("tip-active"); });
+      if (!isActive) tip.classList.add("tip-active");
+    });
+  });
+  document.addEventListener("click", function() {
+    document.querySelectorAll(".info-tip.tip-active").forEach(function(t) { t.classList.remove("tip-active"); });
+  });
+
   initFilters();
   initToggleControls();
 
@@ -1196,6 +1313,17 @@ async function loadAll() {
   ensureHistToggle();
   initCollapsibleCards();
   initStationsMetricSel();
+
+  // On mobile, collapse all cards by default to reduce initial rendering cost
+  if (isMobile()) {
+    document.querySelectorAll(".card.collapsible").forEach(function(card) {
+      if (!card.classList.contains("card--collapsed")) {
+        card.classList.add("card--collapsed");
+        const toggle = card.querySelector(".card-toggle");
+        if (toggle) toggle.textContent = "\u25B6";
+      }
+    });
+  }
 
   renderAll();
 

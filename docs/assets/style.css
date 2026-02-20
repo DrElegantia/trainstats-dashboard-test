@@ -135,30 +135,15 @@ button:hover {
   line-height: 1;
 }
 
-/* --- Month range inputs --- */
+/* --- Month range selects --- */
 .month-range {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.month-range input[type="month"] {
+.month-range select {
   flex: 1;
-  padding: 9px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: rgba(10, 14, 28, 0.6);
-  color: var(--text);
-  color-scheme: dark;
-  font-size: 13px;
-  outline: none;
-  transition: border-color 0.2s, box-shadow 0.2s;
-}
-
-.month-range input[type="month"]:hover,
-.month-range input[type="month"]:focus {
-  border-color: rgba(122, 162, 255, 0.45);
-  box-shadow: 0 0 0 2px rgba(122, 162, 255, 0.08);
 }
 
 .month-sep {
@@ -281,25 +266,83 @@ button:hover {
   margin-left: 4px;
   opacity: 0.7;
   transition: opacity 0.2s;
+  position: relative;
 }
 
 .info-tip:hover {
   opacity: 1;
 }
 
+.info-tip[data-tooltip]:hover::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: 130%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1a2340;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 400;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--accent);
+  white-space: pre-line;
+  z-index: 9999;
+  pointer-events: none;
+  min-width: 160px;
+  max-width: 260px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  line-height: 1.5;
+}
+
+.info-tip[data-tooltip]:hover::before,
+.info-tip.tip-active[data-tooltip]::before {
+  content: "";
+  position: absolute;
+  bottom: 110%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: var(--accent);
+  z-index: 10000;
+  pointer-events: none;
+}
+
+.info-tip.tip-active[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: 130%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1a2340;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 400;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--accent);
+  white-space: pre-line;
+  z-index: 9999;
+  pointer-events: none;
+  min-width: 160px;
+  max-width: 260px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  line-height: 1.5;
+}
+
 .toggle-pill {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 32px;
-  height: 30px;
-  padding: 0 10px;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 7px;
   border-radius: 999px;
   border: 1px solid rgba(122, 162, 255, 0.6);
   background: rgba(122, 162, 255, 0.15);
   color: var(--text);
   cursor: pointer;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
   white-space: nowrap;
   transition: all 0.2s ease;
@@ -328,6 +371,27 @@ button:hover {
   .filters-row--extra { grid-template-columns: 1fr; }
   .kpis { grid-template-columns: 1fr 1fr; }
   .grid2 { grid-template-columns: 1fr; }
-  .chart, .map { height: 360px; }
+  .chart, .map { height: 300px; }
+}
+
+@media (max-width: 600px) {
+  .topbar { padding: 12px 10px 8px 10px; flex-direction: column; align-items: flex-start; gap: 4px; }
+  .title h1 { font-size: 16px; }
+  .panel { margin: 8px; padding: 10px; }
+  .filters-row--primary { grid-template-columns: 1fr; }
+  .filters-row--extra { grid-template-columns: 1fr; }
+  .kpis { grid-template-columns: 1fr 1fr; gap: 6px; }
+  .kpi { padding: 8px; }
+  .kpiValue { font-size: 16px; }
+  .kpiLabel { font-size: 10px; }
+  .chart { height: 240px; }
+  .chart--tall { height: 300px; }
+  .map { height: 240px; }
+  .grid2 { gap: 8px; }
+  .card { padding: 8px; }
+  .card h2 { font-size: 13px; }
+  .month-range { flex-direction: column; gap: 4px; }
+  .month-range select { width: 100%; }
+  .month-sep { display: none; }
 }
 
