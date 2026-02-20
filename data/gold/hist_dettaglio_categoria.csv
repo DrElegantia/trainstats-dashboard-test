@@ -14763,6 +14763,7 @@ mese,tipo_giorno,fascia_oraria,categoria,bucket_ritardo_arrivo,count,minuti_rita
 2026-01,infrasettimanale,mattina,FA,"(30,60]",4,168.0,0.0
 2026-01,infrasettimanale,mattina,FA,"(5,10]",1,9.0,0.0
 2026-01,infrasettimanale,mattina,FA,"(60,120]",2,155.0,0.0
+2026-01,infrasettimanale,mattina,FA,> 120,2,281.0,0.0
 2026-01,infrasettimanale,mattina,FB,"(-10,-5]",2,0.0,11.0
 2026-01,infrasettimanale,mattina,FB,"(0,1]",1,1.0,0.0
 2026-01,infrasettimanale,mattina,FB,"(1,5]",2,4.0,0.0
@@ -14861,7 +14862,7 @@ mese,tipo_giorno,fascia_oraria,categoria,bucket_ritardo_arrivo,count,minuti_rita
 2026-01,infrasettimanale,notte,FB,"(-10,-5]",1,0.0,8.0
 2026-01,infrasettimanale,notte,FB,"(-5,-1]",2,0.0,3.0
 2026-01,infrasettimanale,notte,FB,"(0,1]",1,1.0,0.0
-2026-01,infrasettimanale,notte,FB,"(1,5]",2,7.0,0.0
+2026-01,infrasettimanale,notte,FB,"(1,5]",1,3.0,0.0
 2026-01,infrasettimanale,notte,FB,"(10,15]",1,12.0,0.0
 2026-01,infrasettimanale,notte,FB,"(15,30]",2,48.0,0.0
 2026-01,infrasettimanale,notte,FB,"(30,60]",1,47.0,0.0
@@ -14909,7 +14910,7 @@ mese,tipo_giorno,fascia_oraria,categoria,bucket_ritardo_arrivo,count,minuti_rita
 2026-01,infrasettimanale,notte,MET,"(1,5]",11,25.0,0.0
 2026-01,infrasettimanale,notte,MET,"(10,15]",1,11.0,0.0
 2026-01,infrasettimanale,notte,MET,"(30,60]",2,109.0,0.0
-2026-01,infrasettimanale,notte,MET,"(5,10]",3,27.0,0.0
+2026-01,infrasettimanale,notte,MET,"(5,10]",1,6.0,0.0
 2026-01,infrasettimanale,notte,MET,"(60,120]",1,78.0,0.0
 2026-01,infrasettimanale,notte,NCL,"(-60,-30]",5,0.0,195.0
 2026-01,infrasettimanale,notte,REG,"(-1,0]",667,0.0,0.0
@@ -14967,7 +14968,7 @@ mese,tipo_giorno,fascia_oraria,categoria,bucket_ritardo_arrivo,count,minuti_rita
 2026-01,infrasettimanale,pomeriggio,FB,"(0,1]",1,1.0,0.0
 2026-01,infrasettimanale,pomeriggio,FB,"(1,5]",1,3.0,0.0
 2026-01,infrasettimanale,pomeriggio,FB,"(15,30]",1,18.0,0.0
-2026-01,infrasettimanale,pomeriggio,FB,"(30,60]",1,44.0,0.0
+2026-01,infrasettimanale,pomeriggio,FB,"(30,60]",1,55.0,0.0
 2026-01,infrasettimanale,pomeriggio,FB,"(60,120]",1,80.0,0.0
 2026-01,infrasettimanale,pomeriggio,FR,"(-1,0]",18,0.0,0.0
 2026-01,infrasettimanale,pomeriggio,FR,"(-10,-5]",41,0.0,253.0
@@ -15058,7 +15059,7 @@ mese,tipo_giorno,fascia_oraria,categoria,bucket_ritardo_arrivo,count,minuti_rita
 2026-01,infrasettimanale,sera,EN,"(10,15]",2,23.0,0.0
 2026-01,infrasettimanale,sera,EN,"(15,30]",2,40.0,0.0
 2026-01,infrasettimanale,sera,EN,"(30,60]",2,70.0,0.0
-2026-01,infrasettimanale,sera,EN,"(5,10]",2,13.0,0.0
+2026-01,infrasettimanale,sera,EN,"(5,10]",1,6.0,0.0
 2026-01,infrasettimanale,sera,EXP,"(-10,-5]",1,0.0,6.0
 2026-01,infrasettimanale,sera,EXP,"(-5,-1]",1,0.0,1.0
 2026-01,infrasettimanale,sera,FA,"(-1,0]",1,0.0,0.0
@@ -15070,7 +15071,7 @@ mese,tipo_giorno,fascia_oraria,categoria,bucket_ritardo_arrivo,count,minuti_rita
 2026-01,infrasettimanale,sera,FA,"(15,30]",1,22.0,0.0
 2026-01,infrasettimanale,sera,FA,"(30,60]",1,32.0,0.0
 2026-01,infrasettimanale,sera,FA,"(5,10]",1,6.0,0.0
-2026-01,infrasettimanale,sera,FA,"(60,120]",1,80.0,0.0
+2026-01,infrasettimanale,sera,FA,"(60,120]",1,86.0,0.0
 2026-01,infrasettimanale,sera,FB,"(-10,-5]",1,0.0,6.0
 2026-01,infrasettimanale,sera,FB,"(-5,-1]",5,0.0,15.0
 2026-01,infrasettimanale,sera,FB,"(0,1]",3,3.0,0.0
@@ -15467,7 +15468,7 @@ mese,tipo_giorno,fascia_oraria,categoria,bucket_ritardo_arrivo,count,minuti_rita
 2026-01,weekend,pomeriggio,IC,> 120,1,395.0,0.0
 2026-01,weekend,pomeriggio,IC,missing,1,0.0,0.0
 2026-01,weekend,pomeriggio,ICN,"(-5,-1]",2,0.0,6.0
-2026-01,weekend,pomeriggio,ICN,"(30,60]",1,32.0,0.0
+2026-01,weekend,pomeriggio,ICN,"(30,60]",2,89.0,0.0
 2026-01,weekend,pomeriggio,ICN,"(60,120]",1,70.0,0.0
 2026-01,weekend,pomeriggio,MET,"(-1,0]",53,0.0,0.0
 2026-01,weekend,pomeriggio,MET,"(-10,-5]",4,0.0,29.0
