@@ -49,6 +49,25 @@
     </div>
   </section>
 
+  <section class="panel filters" id="filtersExtra">
+    <div class="filter">
+      <label>Mese</label>
+      <div style="display:flex;align-items:center;gap:6px">
+        <input type="month" id="monthFrom" />
+        <span>&ndash;</span>
+        <input type="month" id="monthTo" />
+      </div>
+    </div>
+    <div class="filter">
+      <label>Tipo giornata <span class="info-tip" title="Infrasettimanale = Lun&ndash;Ven&#10;Weekend = Sab&ndash;Dom">&apos;</span></label>
+      <div id="dayTypeWrap" style="display:flex;align-items:center;gap:6px"></div>
+    </div>
+    <div class="filter">
+      <label>Fascia oraria <span class="info-tip" title="Mattina = 6:00&ndash;8:59&#10;Tarda mattina = 9:00&ndash;13:59&#10;Pomeriggio = 14:00&ndash;17:59&#10;Sera = 18:00&ndash;21:59&#10;Notte = 22:00&ndash;5:59">&apos;</span></label>
+      <div id="timeSlotWrap" style="display:flex;align-items:center;gap:6px"></div>
+    </div>
+  </section>
+
   <section class="panel kpis">
     <div class="kpi">
       <div class="kpiLabel">Corse osservate</div>
