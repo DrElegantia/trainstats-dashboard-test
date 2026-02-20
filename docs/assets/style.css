@@ -183,8 +183,43 @@ button:hover {
 .chart--tall { height: 420px; }
 .map { height: 320px; border-radius: 12px; overflow: hidden; }
 
+.info-tip {
+  display: inline-block;
+  cursor: help;
+  font-size: 13px;
+  color: var(--accent);
+  border-bottom: 1px dotted var(--accent);
+  margin-left: 2px;
+}
+
+.toggle-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.85);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 11px;
+  white-space: nowrap;
+  transition: opacity 0.15s;
+}
+.toggle-pill.off {
+  opacity: 0.3;
+  border-color: rgba(255,255,255,0.35);
+}
+
+#filtersExtra {
+  grid-template-columns: repeat(3, minmax(140px, 1fr));
+}
+
 @media (max-width: 980px) {
   .filters { grid-template-columns: 1fr 1fr; }
+  #filtersExtra { grid-template-columns: 1fr; }
   .kpis { grid-template-columns: 1fr 1fr; }
   .grid2 { grid-template-columns: 1fr; }
   .chart, .map { height: 360px; }
