@@ -96,12 +96,8 @@ async function pickDataBase() {
     "gold/manifest.json",
     "kpi_mese_categoria.csv",
     "gold/kpi_mese_categoria.csv",
-    "kpi_giorno_categoria.csv",
-    "gold/kpi_giorno_categoria.csv",
     "kpi_mese.csv",
-    "gold/kpi_mese.csv",
-    "kpi_giorno.csv",
-    "gold/kpi_giorno.csv"
+    "gold/kpi_mese.csv"
   ];
 
   for (const base0 of DATA_ROOT_CANDIDATES) {
@@ -244,16 +240,15 @@ function safeManifestDefaults() {
     gold_files: [
       "kpi_mese.csv",
       "kpi_mese_categoria.csv",
-      "kpi_giorno.csv",
-      "kpi_giorno_categoria.csv",
+      "kpi_mese_categoria_segmenti.csv",
       "hist_mese_categoria.csv",
-      "hist_giorno_categoria.csv",
+      "hist_mese_categoria_segmenti.csv",
       "stazioni_mese_categoria_nodo.csv",
-      "stazioni_giorno_categoria_nodo.csv",
+      "stazioni_mese_categoria_nodo_segmenti.csv",
       "od_mese_categoria.csv",
-      "od_giorno_categoria.csv",
+      "od_mese_categoria_segmenti.csv",
       "hist_stazioni_mese_categoria_ruolo.csv",
-      "hist_stazioni_giorno_categoria_ruolo.csv"
+      "hist_stazioni_mese_categoria_ruolo_segmenti.csv"
     ],
     delay_bucket_labels: [
       "<=-60",
@@ -281,16 +276,15 @@ const state = {
   data: {
     kpiMonth: [],
     kpiMonthCat: [],
-    kpiDay: [],
-    kpiDayCat: [],
+    kpiMonthCatSeg: [],
     histMonthCat: [],
-    histDayCat: [],
+    histMonthCatSeg: [],
     stationsMonthNode: [],
-    stationsDayNode: [],
+    stationsMonthNodeSeg: [],
     odMonthCat: [],
-    odDayCat: [],
+    odMonthCatSeg: [],
     histStationsMonthRuolo: [],
-    histStationsDayRuolo: []
+    histStationsMonthRuoloSeg: [],
   },
   stationsRef: new Map(),
   capoluoghiSet: new Set(),
@@ -301,12 +295,10 @@ const state = {
     cat: "all",
     dep: "all",
     arr: "all",
-    day_from: "",
-    day_to: "",
-    weekdays: [true, true, true, true, true, true, true],
-    time_all: true,
-    time_from: "00:00",
-    time_to: "23:59"
+    month_from: "",
+    month_to: "",
+    day_type: { infrasettimanale: true, weekend: true },
+    time_slots: { mattina: true, tarda_mattina: true, pomeriggio: true, sera: true, notte: true }
   }
 };
 
@@ -401,135 +393,53 @@ function passYear(r, field) {
   return k.slice(0, 4) === state.filters.year;
 }
 
-function ensureWeekdays() {
-  if (!Array.isArray(state.filters.weekdays) || state.filters.weekdays.length !== 7) {
-    state.filters.weekdays = [true, true, true, true, true, true, true];
-  }
+function hasMonthFilter() {
+  return !!(state.filters.month_from || state.filters.month_to);
 }
 
-function hasWeekdayFilter() {
-  ensureWeekdays();
-  return state.filters.weekdays.some((x) => !x);
+function hasDayTypeFilter() {
+  const f = state.filters.day_type || {};
+  return !(f.infrasettimanale && f.weekend);
 }
 
-function hasStationFilter() {
-  return state.filters.dep !== "all" || state.filters.arr !== "all";
+function hasTimeSlotFilter() {
+  const f = state.filters.time_slots || {};
+  return !(f.mattina && f.tarda_mattina && f.pomeriggio && f.sera && f.notte);
 }
 
-function hasDayFilter() {
-  return !!(state.filters.day_from || state.filters.day_to);
-}
-
-function hasTimeFilter() {
-  if (state.filters.time_all) return false;
-  const a = String(state.filters.time_from || "00:00").trim() || "00:00";
-  const b = String(state.filters.time_to || "23:59").trim() || "23:59";
-  return !(a === "00:00" && b === "23:59");
-}
-
-function dowIndexFromISO(isoDate) {
-  const s = String(isoDate || "").slice(0, 10);
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
-  if (!m) return null;
-  const y = parseInt(m[1], 10);
-  const mo = parseInt(m[2], 10);
-  const d = parseInt(m[3], 10);
-  const dt = new Date(y, mo - 1, d);
-  const js = dt.getDay();
-  return (js + 6) % 7;
-}
-
-function passWeekdays(isoDate) {
-  if (!hasWeekdayFilter()) return true;
-  const idx = dowIndexFromISO(isoDate);
-  if (idx === null) return false;
-  ensureWeekdays();
-  return !!state.filters.weekdays[idx];
-}
-
-function parseTimeToMinutes(s) {
-  const t = String(s || "").trim();
-  const m = /^(\d{1,2})(?::(\d{2}))?$/.exec(t);
-  if (!m) return null;
-  const hh = parseInt(m[1], 10);
-  const mm = parseInt(m[2] || "0", 10);
-  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
-  if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
-  return hh * 60 + mm;
-}
-
-function timeInRange(mins, fromMins, toMins) {
-  if (mins === null || fromMins === null || toMins === null) return true;
-  if (fromMins <= toMins) return mins >= fromMins && mins <= toMins;
-  return mins >= fromMins || mins <= toMins;
-}
-
-function extractTimeFromRow(row) {
-  const v =
-    row.ora ??
-    row.ora_partenza ??
-    row.orario ??
-    row.hh ??
-    row.hour ??
-    row.ora_di_partenza ??
-    row.time ??
-    "";
-  if (v === "" || v === null || typeof v === "undefined") return null;
-  if (typeof v === "number" && Number.isFinite(v)) {
-    const hh = Math.max(0, Math.min(23, Math.floor(v)));
-    return hh * 60;
-  }
-  const mins = parseTimeToMinutes(v);
-  return mins;
-}
-
-function passTime(row) {
-  if (!hasTimeFilter()) return true;
-  const fromMins = parseTimeToMinutes(state.filters.time_from || "00:00");
-  const toMins = parseTimeToMinutes(state.filters.time_to || "23:59");
-  const mins = extractTimeFromRow(row);
-  if (mins === null) return true;
-  return timeInRange(mins, fromMins, toMins);
-}
-
-function passDayKey(row, field) {
-  const d = String(row[field] || "").slice(0, 10);
-  if (!d) return false;
-
-  const from = String(state.filters.day_from || "").trim();
-  const to = String(state.filters.day_to || "").trim();
-
-  if (from || to) {
-    const a = from || to;
-    const b = to || from;
-    const lo = a <= b ? a : b;
-    const hi = a <= b ? b : a;
-    if (d < lo || d > hi) return false;
-  }
-
-  if (!passWeekdays(d)) return false;
-  if (!passTime(row)) return false;
-
+function passDayType(row) {
+  const selected = state.filters.day_type || {};
+  const v = String(row.tipo_giorno || '').trim();
+  if (!v) return true;
+  if (v === 'infrasettimanale') return !!selected.infrasettimanale;
+  if (v === 'weekend') return !!selected.weekend;
   return true;
 }
 
-function passMonthFromDayRange(row, field) {
-  if (!hasDayFilter()) return true;
+function passTimeSlot(row) {
+  const selected = state.filters.time_slots || {};
+  const v = String(row.fascia_oraria || '').trim();
+  if (!v || v === 'missing') return true;
+  if (v in selected) return !!selected[v];
+  return true;
+}
 
-  const from = String(state.filters.day_from || "").trim();
-  const to = String(state.filters.day_to || "").trim();
+function passMonthRange(row, field) {
+  if (!hasMonthFilter()) return true;
+  const from = String(state.filters.month_from || '').trim();
+  const to = String(state.filters.month_to || '').trim();
   const a = from || to;
   const b = to || from;
-
-  const lo = (a <= b ? a : b).slice(0, 7);
-  const hi = (a <= b ? b : a).slice(0, 7);
-
-  const m = String(row[field] || "").slice(0, 7);
+  const lo = a <= b ? a : b;
+  const hi = a <= b ? b : a;
+  const m = String(row[field] || '').slice(0, 7);
   if (!m) return false;
-
   return m >= lo && m <= hi;
 }
 
+function passSegmentFilters(row) {
+  return passDayType(row) && passTimeSlot(row);
+}
 
 function initMap() {
   const mapEl = firstEl(["map", "mapStations", "stationsMap"]);
@@ -590,155 +500,118 @@ function ensureExtraControls() {
   return extra;
 }
 
-function initDayWeekTimeControls() {
-  if (document.getElementById("dayFrom")) return;
+function initSegmentControls() {
+  if (document.getElementById("monthFrom")) return;
 
   const extra = ensureExtraControls();
   if (!extra) return;
 
+  const monthWrap = document.createElement("div");
+  monthWrap.style.display = "flex";
+  monthWrap.style.alignItems = "center";
+  monthWrap.style.gap = "8px";
+
+  const monthFrom = document.createElement("input");
+  monthFrom.type = "month";
+  monthFrom.id = "monthFrom";
+  monthFrom.value = state.filters.month_from || "";
+
+  const monthTo = document.createElement("input");
+  monthTo.type = "month";
+  monthTo.id = "monthTo";
+  monthTo.value = state.filters.month_to || "";
+
+  monthWrap.appendChild(monthFrom);
+  monthWrap.appendChild(monthTo);
+
   const dayWrap = document.createElement("div");
+  dayWrap.id = "dayTypeWrap";
   dayWrap.style.display = "flex";
   dayWrap.style.alignItems = "center";
-  dayWrap.style.gap = "10px";
-  dayWrap.style.flexWrap = "wrap";
+  dayWrap.style.gap = "6px";
 
-  const dayLab = document.createElement("div");
-  dayLab.innerText = "";
+  const dayInfo = document.createElement("span");
+  dayInfo.innerText = "(i)";
+  dayInfo.title = "Infrasettimanale = Lun-Ven, Weekend = Sab-Dom";
+  dayInfo.style.opacity = "0.8";
+  dayWrap.appendChild(dayInfo);
 
-  const from = document.createElement("input");
-  from.type = "date";
-  from.id = "dayFrom";
-  from.value = state.filters.day_from || "";
+  const dayDef = [
+    ["infrasettimanale", "Infrasettimanale", "Lun-Ven"],
+    ["weekend", "Weekend", "Sab-Dom"]
+  ];
 
-  const to = document.createElement("input");
-  to.type = "date";
-  to.id = "dayTo";
-  to.value = state.filters.day_to || "";
+  const slotWrap = document.createElement("div");
+  slotWrap.id = "timeSlotWrap";
+  slotWrap.style.display = "flex";
+  slotWrap.style.alignItems = "center";
+  slotWrap.style.gap = "6px";
+  slotWrap.style.flexWrap = "wrap";
 
-  dayWrap.appendChild(dayLab);
-  dayWrap.appendChild(from);
-  dayWrap.appendChild(to);
+  const slotInfo = document.createElement("span");
+  slotInfo.innerText = "(i)";
+  slotInfo.title = "Mattina 6-9, Tarda mattina 9-13, Pomeriggio 14-18, Sera 18-22, Notte 22-6";
+  slotInfo.style.opacity = "0.8";
+  slotWrap.appendChild(slotInfo);
 
-  const wdLab = document.createElement("div");
-  wdLab.innerText = "";
+  const slotDef = [
+    ["mattina", "Mattina", "Fascia mattino"],
+    ["tarda_mattina", "Tarda mattina", "Fascia tarda mattina"],
+    ["pomeriggio", "Pomeriggio", "Fascia pomeriggio"],
+    ["sera", "Sera", "Fascia sera"],
+    ["notte", "Notte", "Fascia notte"]
+  ];
 
-  const wdWrap = document.createElement("div");
-  wdWrap.id = "weekdayWrap";
-  wdWrap.style.display = "flex";
-  wdWrap.style.alignItems = "center";
-  wdWrap.style.gap = "6px";
-
-  ensureWeekdays();
-  const wdLabels = ["Lu", "Ma", "Me", "Gi", "Ve", "Sa", "Do"];
-
-  const refreshWdStyles = () => {
-    const btns = wdWrap.querySelectorAll("button[data-wd]");
-    btns.forEach((b) => {
-      const idx = parseInt(String(b.dataset.wd || "0"), 10);
-      const on = !!state.filters.weekdays[idx];
-      b.style.opacity = on ? "1" : "0.35";
-      b.style.borderColor = on ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.35)";
-    });
-  };
-
-  wdLabels.forEach((t, i) => {
+  const mkToggle = (key, label, hint, source, onChange) => {
     const b = document.createElement("button");
     b.type = "button";
-    b.dataset.wd = String(i);
-    b.innerText = t;
-    b.style.width = "28px";
+    b.innerText = label;
+    b.title = hint;
+    b.dataset.key = key;
     b.style.height = "28px";
     b.style.borderRadius = "999px";
     b.style.border = "1px solid rgba(255,255,255,0.85)";
     b.style.background = "transparent";
     b.style.color = "inherit";
     b.style.cursor = "pointer";
-    b.style.display = "inline-flex";
-    b.style.alignItems = "center";
-    b.style.justifyContent = "center";
-    b.style.padding = "0";
+    b.style.padding = "0 10px";
+    const repaint = () => {
+      const on = !!source[key];
+      b.style.opacity = on ? "1" : "0.35";
+      b.style.borderColor = on ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.35)";
+    };
+    repaint();
     b.onclick = () => {
-      ensureWeekdays();
-      state.filters.weekdays[i] = !state.filters.weekdays[i];
-      refreshWdStyles();
+      source[key] = !source[key];
+      repaint();
       updateFiltersNote();
       renderAll();
+      onChange();
     };
-    wdWrap.appendChild(b);
-  });
+    return b;
+  };
 
-  refreshWdStyles();
-
-  const timeLab = document.createElement("div");
-  timeLab.innerText = "Orari";
-
-  const timeAllWrap = document.createElement("label");
-  timeAllWrap.style.display = "inline-flex";
-  timeAllWrap.style.alignItems = "center";
-  timeAllWrap.style.gap = "6px";
-  timeAllWrap.style.cursor = "pointer";
-
-  const timeAll = document.createElement("input");
-  timeAll.type = "checkbox";
-  timeAll.id = "timeAll";
-  timeAll.checked = !!state.filters.time_all;
-
-  const timeAllTxt = document.createElement("span");
-  timeAllTxt.innerText = "Tutta la giornata";
-
-  timeAllWrap.appendChild(timeAll);
-  timeAllWrap.appendChild(timeAllTxt);
-
-  const timeFrom = document.createElement("input");
-  timeFrom.type = "time";
-  timeFrom.id = "timeFrom";
-  timeFrom.step = "60";
-  timeFrom.value = state.filters.time_from || "00:00";
-
-  const timeTo = document.createElement("input");
-  timeTo.type = "time";
-  timeTo.id = "timeTo";
-  timeTo.step = "60";
-  timeTo.value = state.filters.time_to || "23:59";
+  dayDef.forEach(([k, l, h]) => dayWrap.appendChild(mkToggle(k, l, h, state.filters.day_type, () => {})));
+  slotDef.forEach(([k, l, h]) => slotWrap.appendChild(mkToggle(k, l, h, state.filters.time_slots, () => {})));
 
   const note = document.createElement("div");
   note.id = "filtersNote";
   note.style.fontSize = "12px";
   note.style.opacity = "0.75";
-  note.style.marginLeft = "6px";
-
-  const syncTimeDisabled = () => {
-    const allDay = timeAll.checked;
-    timeFrom.disabled = allDay;
-    timeTo.disabled = allDay;
-  };
 
   const apply = () => {
-    state.filters.day_from = String(from.value || "").trim();
-    state.filters.day_to = String(to.value || "").trim();
-    state.filters.time_all = !!timeAll.checked;
-    state.filters.time_from = String(timeFrom.value || "00:00").trim() || "00:00";
-    state.filters.time_to = String(timeTo.value || "23:59").trim() || "23:59";
-    syncTimeDisabled();
+    state.filters.month_from = String(monthFrom.value || "").trim();
+    state.filters.month_to = String(monthTo.value || "").trim();
     updateFiltersNote();
     renderAll();
   };
 
-  from.onchange = apply;
-  to.onchange = apply;
-  timeAll.onchange = apply;
-  timeFrom.onchange = apply;
-  timeTo.onchange = apply;
+  monthFrom.onchange = apply;
+  monthTo.onchange = apply;
 
-  syncTimeDisabled();
-
+  extra.appendChild(monthWrap);
   extra.appendChild(dayWrap);
-  extra.appendChild(wdLab);
-  extra.appendChild(wdWrap);
-  extra.appendChild(timeLab);
-  extra.appendChild(timeAllWrap);
-  extra.appendChild(timeFrom);
-  extra.appendChild(timeTo);
+  extra.appendChild(slotWrap);
   extra.appendChild(note);
 
   updateFiltersNote();
@@ -747,26 +620,14 @@ function initDayWeekTimeControls() {
 function updateFiltersNote() {
   const el = document.getElementById("filtersNote");
   if (!el) return;
-
-  const d = hasDayFilter();
-  const w = hasWeekdayFilter();
-  const t = hasTimeFilter();
-
-  if (!d && !w && !t) {
+  const m = hasMonthFilter();
+  const d = hasDayTypeFilter();
+  const t = hasTimeSlotFilter();
+  if (!m && !d && !t) {
     el.innerText = "";
     return;
   }
-
-  const haveDay = state.data.kpiDayCat && state.data.kpiDayCat.length > 0;
-  const haveOdDay = state.data.odDayCat && state.data.odDayCat.length > 0;
-  const haveStDay = state.data.stationsDayNode && state.data.stationsDayNode.length > 0;
-
-  let msg = "Filtro attivo.";
-  if ((d || w) && !haveDay) msg = "Filtro attivo, ma mancano le tabelle giornaliere.";
-  if (t && haveDay) msg = "Filtro attivo. Se non esiste la dimensione oraria nei CSV, il filtro orario non cambia i risultati.";
-  if ((d || w) && haveDay && !haveStDay) msg = msg + " Per la mappa stazioni serve anche il file stazioni giornaliero.";
-
-  el.innerText = msg;
+  el.innerText = "Filtri segmentazione attivi su mese/tipologia giornata/fascia oraria.";
 }
 
 function initFilters() {
@@ -807,13 +668,13 @@ function initFilters() {
   const deps = uniq(
     [
       ...(state.data.odMonthCat || []).map((r) => r.cod_partenza),
-      ...(state.data.odDayCat || []).map((r) => r.cod_partenza)
+      ...(state.data.odMonthCatSeg || []).map((r) => r.cod_partenza)
     ].filter(Boolean)
   );
   const arrs = uniq(
     [
       ...(state.data.odMonthCat || []).map((r) => r.cod_arrivo),
-      ...(state.data.odDayCat || []).map((r) => r.cod_arrivo)
+      ...(state.data.odMonthCatSeg || []).map((r) => r.cod_arrivo)
     ].filter(Boolean)
   );
 
@@ -854,31 +715,22 @@ function initFilters() {
       state.filters.cat = "all";
       state.filters.dep = "all";
       state.filters.arr = "all";
-      state.filters.day_from = "";
-      state.filters.day_to = "";
-      state.filters.weekdays = [true, true, true, true, true, true, true];
-      state.filters.time_all = true;
-      state.filters.time_from = "00:00";
-      state.filters.time_to = "23:59";
+      state.filters.month_from = "";
+      state.filters.month_to = "";
+      state.filters.day_type = { infrasettimanale: true, weekend: true };
+      state.filters.time_slots = { mattina: true, tarda_mattina: true, pomeriggio: true, sera: true, notte: true };
 
       if (yearSel) yearSel.value = "all";
       if (catSel) catSel.value = "all";
       if (depSel) depSel.value = "all";
       if (arrSel) arrSel.value = "all";
 
-      const dayFrom = document.getElementById("dayFrom");
-      const dayTo = document.getElementById("dayTo");
-      const timeAll = document.getElementById("timeAll");
-      const timeFrom = document.getElementById("timeFrom");
-      const timeTo = document.getElementById("timeTo");
+      const monthFrom = document.getElementById("monthFrom");
+      const monthTo = document.getElementById("monthTo");
+      if (monthFrom) monthFrom.value = "";
+      if (monthTo) monthTo.value = "";
 
-      if (dayFrom) dayFrom.value = "";
-      if (dayTo) dayTo.value = "";
-      if (timeAll) timeAll.checked = true;
-      if (timeFrom) timeFrom.value = "00:00";
-      if (timeTo) timeTo.value = "23:59";
-
-      initDayWeekTimeControls();
+      initSegmentControls();
       updateFiltersNote();
       renderAll();
     };
@@ -973,11 +825,6 @@ function ensureHistToggle() {
   };
 }
 
-function useDailyAggregation() {
-  const haveDay = state.data.kpiDayCat && state.data.kpiDayCat.length > 0;
-  if (!haveDay) return false;
-  return true;
-}
 
 function getMetricMode() {
   const sel = firstEl(["mapMetricSel", "mapSel", "mappaSel"]);
@@ -1013,21 +860,14 @@ function computeValue(corse, ritardo, minuti, sopp, canc) {
 
 function renderKPI() {
   const stationFiltered = hasStationFilter();
-  const useDay = useDailyAggregation();
   let base, keyField;
 
   if (stationFiltered) {
-    const haveOdDay = state.data.odDayCat && state.data.odDayCat.length > 0;
-    if (useDay && haveOdDay) {
-      base = state.data.odDayCat;
-      keyField = "giorno";
-    } else {
-      base = state.data.odMonthCat;
-      keyField = "mese";
-    }
+    base = state.data.odMonthCatSeg;
+    keyField = "mese";
   } else {
-    base = useDay ? state.data.kpiDayCat : state.data.kpiMonthCat;
-    keyField = useDay ? "giorno" : "mese";
+    base = state.data.kpiMonthCatSeg;
+    keyField = "mese";
   }
 
   let rows = base || [];
@@ -1039,8 +879,8 @@ function renderKPI() {
     if (state.filters.arr !== "all") rows = rows.filter(passArr);
   }
 
-  if (useDay || (stationFiltered && keyField === "giorno")) rows = rows.filter((r) => passDayKey(r, "giorno"));
-  else if (hasDayFilter()) rows = rows.filter((r) => passMonthFromDayRange(r, keyField));
+  rows = rows.filter((r) => passMonthRange(r, keyField));
+  rows = rows.filter(passSegmentFilters);
 
   const total = rows.reduce((a, r) => a + toNum(r.corse_osservate), 0);
   const late = rows.reduce((a, r) => a + toNum(r.in_ritardo), 0);
@@ -1082,9 +922,9 @@ function seriesMonthly() {
   let rows;
 
   if (stationFiltered) {
-    rows = state.data.odMonthCat && state.data.odMonthCat.length ? state.data.odMonthCat : [];
+    rows = state.data.odMonthCatSeg && state.data.odMonthCatSeg.length ? state.data.odMonthCatSeg : [];
   } else {
-    rows = state.data.kpiMonthCat && state.data.kpiMonthCat.length ? state.data.kpiMonthCat : state.data.kpiMonth;
+    rows = state.data.kpiMonthCatSeg && state.data.kpiMonthCatSeg.length ? state.data.kpiMonthCatSeg : state.data.kpiMonthCat;
   }
   rows = rows || [];
 
@@ -1096,7 +936,8 @@ function seriesMonthly() {
     if (state.filters.arr !== "all") rows = rows.filter(passArr);
   }
 
-  if (hasDayFilter()) rows = rows.filter((r) => passMonthFromDayRange(r, "mese"));
+  rows = rows.filter((r) => passMonthRange(r, "mese"));
+  rows = rows.filter(passSegmentFilters);
 
   const by = new Map();
   for (const r of rows) {
@@ -1130,9 +971,9 @@ function seriesDelayIndex() {
   let rows;
 
   if (stationFiltered) {
-    rows = state.data.odMonthCat && state.data.odMonthCat.length ? state.data.odMonthCat : [];
+    rows = state.data.odMonthCatSeg && state.data.odMonthCatSeg.length ? state.data.odMonthCatSeg : [];
   } else {
-    rows = state.data.kpiMonthCat && state.data.kpiMonthCat.length ? state.data.kpiMonthCat : state.data.kpiMonth;
+    rows = state.data.kpiMonthCatSeg && state.data.kpiMonthCatSeg.length ? state.data.kpiMonthCatSeg : state.data.kpiMonthCat;
   }
   rows = rows || [];
 
@@ -1144,7 +985,8 @@ function seriesDelayIndex() {
     if (state.filters.arr !== "all") rows = rows.filter(passArr);
   }
 
-  if (hasDayFilter()) rows = rows.filter((r) => passMonthFromDayRange(r, "mese"));
+  rows = rows.filter((r) => passMonthRange(r, "mese"));
+  rows = rows.filter(passSegmentFilters);
 
   const by = new Map();
   for (const r of rows) {
@@ -1225,18 +1067,14 @@ function renderHist() {
   const showPct = !!(toggle && toggle.checked);
 
   const stationFiltered = hasStationFilter();
-  let base, keyField, useDay;
+  let base, keyField;
 
   if (stationFiltered) {
-    const haveStDay = state.data.histStationsDayRuolo && state.data.histStationsDayRuolo.length > 0;
-    useDay = haveStDay && (hasDayFilter() || hasWeekdayFilter() || hasTimeFilter());
-    base = useDay ? state.data.histStationsDayRuolo : state.data.histStationsMonthRuolo;
-    keyField = useDay ? "giorno" : "mese";
+    base = state.data.histStationsMonthRuoloSeg;
+    keyField = "mese";
   } else {
-    const haveDayHist = state.data.histDayCat && state.data.histDayCat.length > 0;
-    useDay = haveDayHist && (hasDayFilter() || hasWeekdayFilter() || hasTimeFilter());
-    base = useDay ? state.data.histDayCat : state.data.histMonthCat;
-    keyField = useDay ? "giorno" : "mese";
+    base = state.data.histMonthCatSeg;
+    keyField = "mese";
   }
 
   let rows = base || [];
@@ -1254,8 +1092,8 @@ function renderHist() {
     }
   }
 
-  if (useDay) rows = rows.filter((r) => passDayKey(r, "giorno"));
-  else if (hasDayFilter()) rows = rows.filter((r) => passMonthFromDayRange(r, "mese"));
+  rows = rows.filter((r) => passMonthRange(r, "mese"));
+  rows = rows.filter(passSegmentFilters);
 
   const byBucket = new Map();
   let total = 0;
@@ -1349,17 +1187,16 @@ function renderStationsTop10() {
   if (!chart) return;
   if (isCardCollapsed(chart)) return;
 
-  const useDay = useDailyAggregation() && state.data.stationsDayNode && state.data.stationsDayNode.length > 0;
-  const base = useDay ? state.data.stationsDayNode : state.data.stationsMonthNode;
-  const keyField = useDay ? "giorno" : "mese";
+  const base = state.data.stationsMonthNodeSeg;
+  const keyField = "mese";
 
   let rows = base || [];
 
   if (state.filters.year !== "all") rows = rows.filter((r) => passYear(r, keyField));
   if (state.filters.cat !== "all") rows = rows.filter(passCat);
 
-  if (useDay) rows = rows.filter((r) => passDayKey(r, "giorno"));
-  else if (hasDayFilter()) rows = rows.filter((r) => passMonthFromDayRange(r, "mese"));
+  rows = rows.filter((r) => passMonthRange(r, "mese"));
+  rows = rows.filter(passSegmentFilters);
 
   const agg = new Map();
 
@@ -1440,17 +1277,16 @@ function renderMap() {
 
   clearMarkers();
 
-  const useDay = useDailyAggregation() && state.data.stationsDayNode && state.data.stationsDayNode.length > 0;
-  const base = useDay ? state.data.stationsDayNode : state.data.stationsMonthNode;
-  const keyField = useDay ? "giorno" : "mese";
+  const base = state.data.stationsMonthNodeSeg;
+  const keyField = "mese";
 
   let rows = base || [];
 
   if (state.filters.year !== "all") rows = rows.filter((r) => passYear(r, keyField));
   if (state.filters.cat !== "all") rows = rows.filter(passCat);
 
-  if (useDay) rows = rows.filter((r) => passDayKey(r, "giorno"));
-  else if (hasDayFilter()) rows = rows.filter((r) => passMonthFromDayRange(r, "mese"));
+  rows = rows.filter((r) => passMonthRange(r, "mese"));
+  rows = rows.filter(passSegmentFilters);
 
   const agg = new Map();
 
@@ -1645,16 +1481,15 @@ async function loadAll() {
     ...files,
     "kpi_mese.csv",
     "kpi_mese_categoria.csv",
-    "kpi_giorno.csv",
-    "kpi_giorno_categoria.csv",
+    "kpi_mese_categoria_segmenti.csv",
     "hist_mese_categoria.csv",
-    "hist_giorno_categoria.csv",
+    "hist_mese_categoria_segmenti.csv",
     "stazioni_mese_categoria_nodo.csv",
-    "stazioni_giorno_categoria_nodo.csv",
+    "stazioni_mese_categoria_nodo_segmenti.csv",
     "od_mese_categoria.csv",
-    "od_giorno_categoria.csv",
+    "od_mese_categoria_segmenti.csv",
     "hist_stazioni_mese_categoria_ruolo.csv",
-    "hist_stazioni_giorno_categoria_ruolo.csv"
+    "hist_stazioni_mese_categoria_ruolo_segmenti.csv"
   ]);
 
   const texts = await Promise.all(wanted.map((f) => fetchTextAny(candidateFilePaths(base, f))));
@@ -1667,16 +1502,15 @@ async function loadAll() {
 
   state.data.kpiMonth = parsed["kpi_mese.csv"] || [];
   state.data.kpiMonthCat = parsed["kpi_mese_categoria.csv"] || [];
-  state.data.kpiDay = parsed["kpi_giorno.csv"] || [];
-  state.data.kpiDayCat = parsed["kpi_giorno_categoria.csv"] || [];
+  state.data.kpiMonthCatSeg = parsed["kpi_mese_categoria_segmenti.csv"] || state.data.kpiMonthCat;
   state.data.histMonthCat = parsed["hist_mese_categoria.csv"] || [];
-  state.data.histDayCat = parsed["hist_giorno_categoria.csv"] || [];
+  state.data.histMonthCatSeg = parsed["hist_mese_categoria_segmenti.csv"] || state.data.histMonthCat;
   state.data.stationsMonthNode = parsed["stazioni_mese_categoria_nodo.csv"] || [];
-  state.data.stationsDayNode = parsed["stazioni_giorno_categoria_nodo.csv"] || [];
+  state.data.stationsMonthNodeSeg = parsed["stazioni_mese_categoria_nodo_segmenti.csv"] || state.data.stationsMonthNode;
   state.data.odMonthCat = parsed["od_mese_categoria.csv"] || [];
-  state.data.odDayCat = parsed["od_giorno_categoria.csv"] || [];
+  state.data.odMonthCatSeg = parsed["od_mese_categoria_segmenti.csv"] || state.data.odMonthCat;
   state.data.histStationsMonthRuolo = parsed["hist_stazioni_mese_categoria_ruolo.csv"] || [];
-  state.data.histStationsDayRuolo = parsed["hist_stazioni_giorno_categoria_ruolo.csv"] || [];
+  state.data.histStationsMonthRuoloSeg = parsed["hist_stazioni_mese_categoria_ruolo_segmenti.csv"] || state.data.histStationsMonthRuolo;
 
   const stRows = await loadStationsDimAnyBase(base);
 
@@ -1713,7 +1547,7 @@ async function loadAll() {
   );
 
   initFilters();
-  initDayWeekTimeControls();
+  initSegmentControls();
   const mapCardCollapsed = (function() {
     const mapEl = document.getElementById("map");
     const card = mapEl && mapEl.closest && mapEl.closest(".card");
@@ -1728,16 +1562,16 @@ async function loadAll() {
 
   const haveAny =
     (state.data.kpiMonthCat && state.data.kpiMonthCat.length) ||
-    (state.data.kpiDayCat && state.data.kpiDayCat.length) ||
-    (state.data.histMonthCat && state.data.histMonthCat.length);
+    (state.data.kpiMonthCatSeg && state.data.kpiMonthCatSeg.length) ||
+    (state.data.histMonthCatSeg && state.data.histMonthCatSeg.length);
 
   const coordCount = Array.from(state.stationsRef.values()).filter((s) => Number.isFinite(s.lat) && Number.isFinite(s.lon)).length;
 
   const metaExtra =
     " | mese cat: " +
     (state.data.kpiMonthCat ? state.data.kpiMonthCat.length : 0) +
-    " | giorno cat: " +
-    (state.data.kpiDayCat ? state.data.kpiDayCat.length : 0) +
+    " | mese cat segmenti: " +
+    (state.data.kpiMonthCatSeg ? state.data.kpiMonthCatSeg.length : 0) +
     " | stazioni dim: " +
     stRows.length +
     " | stazioni coord: " +
