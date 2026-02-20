@@ -149,6 +149,7 @@ button:hover {
   border: 1px solid var(--border);
   background: rgba(10, 14, 28, 0.6);
   color: var(--text);
+  color-scheme: dark;
   font-size: 13px;
   outline: none;
   transition: border-color 0.2s, box-shadow 0.2s;
