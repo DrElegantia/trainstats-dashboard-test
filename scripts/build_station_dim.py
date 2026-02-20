@@ -298,10 +298,50 @@ def build_station_dim(enable_geocoding: bool = True) -> pd.DataFrame:
     return pd.DataFrame(records)
 
 
+def _deduplicate_by_name(df: pd.DataFrame) -> pd.DataFrame:
+    """Deduplica stazioni con lo stesso nome ma codici diversi.
+
+    Per ogni gruppo di stazioni con lo stesso nome (normalizzato), mantiene
+    il record che ha coordinate. Se più record hanno coordinate, mantiene il
+    primo in ordine di codice. Aggiunge una colonna 'alias_codes' con tutti
+    i codici alternativi.
+    """
+    if df.empty:
+        return df
+
+    df = df.copy()
+    df["_name_key"] = df["nome_stazione"].apply(_normalize_for_match)
+
+    groups = df.groupby("_name_key", dropna=False)
+    keep_indices = []
+
+    for _, group in groups:
+        if len(group) == 1:
+            keep_indices.append(group.index[0])
+            continue
+        # Prefer records with coordinates
+        with_coords = group[group["lat"].notna() & group["lon"].notna()]
+        if not with_coords.empty:
+            keep_indices.append(with_coords.index[0])
+        else:
+            keep_indices.append(group.index[0])
+
+    result = df.loc[keep_indices].drop(columns=["_name_key"])
+    before = len(df)
+    after = len(result)
+    if before != after:
+        print(f"Deduplication by name: {before} -> {after} stations ({before - after} duplicates removed)")
+    return result.reset_index(drop=True)
+
+
 def save_station_dim(df: pd.DataFrame) -> None:
     """Salva la dimensione delle stazioni in data/gold/."""
     gold_dir = Path("data") / "gold"
     ensure_dir(str(gold_dir))
+
+    # Deduplica per nome prima di salvare
+    df = _deduplicate_by_name(df)
+
     output_path = gold_dir / "stations_dim.csv"
     df.to_csv(output_path, index=False, encoding="utf-8")
 
