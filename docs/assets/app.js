@@ -546,6 +546,13 @@ const MONTH_NAMES = [
   "Luglio","Agosto","Settembre","Ottobre","Novembre","Dicembre"
 ];
 
+/** Convert "YYYY-MM" to "MM/AA" for compact x-axis labels */
+function fmtMonthShort(ym) {
+  const parts = String(ym || "").split("-");
+  if (parts.length < 2) return ym;
+  return parts[1] + "/" + parts[0].slice(2);
+}
+
 function updateDepAliases() {
   if (state.filters.dep === "all") { state._depAliases = null; return; }
   const item = state._depItems.find((it) => it.code === state.filters.dep);
@@ -880,7 +887,7 @@ function seriesMonthly() {
   const rows = getFilteredSeriesRows();
   const out = aggregateByMonth(rows);
   return {
-    x: out.map((o) => o.key),
+    x: out.map((o) => fmtMonthShort(o.key)),
     y: out.map((o) => computeValue(o.corse, o.rit, o.min, o.sopp, o.canc))
   };
 }
@@ -889,7 +896,7 @@ function seriesDelayIndex() {
   const rows = getFilteredSeriesRows();
   const out = aggregateByMonth(rows);
   return {
-    x: out.map((o) => o.key),
+    x: out.map((o) => fmtMonthShort(o.key)),
     y: out.map((o) => o.corse > 0 ? ((o.rit + o.canc + o.sopp) / o.corse) * 100 : 0)
   };
 }
