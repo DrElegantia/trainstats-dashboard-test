@@ -1022,7 +1022,7 @@ function stationsMetricLabel() {
   return labels[m] || m;
 }
 
-/* ────────────────── stations top 10 ────────────────── */
+/* ────────────────── stations top 10 (capoluoghi only) ────────────────── */
 
 function renderStationsTop10() {
   if (typeof Plotly !== "object") return;
@@ -1036,14 +1036,20 @@ function renderStationsTop10() {
   rows = applyCommonFilters(rows, "mese");
   if (useDetail) rows = applyDetailDimFilter(rows);
 
+  // Aggregate by capoluogo (provincial capital) instead of individual station
   const agg = new Map();
   for (const r of rows) {
     const code = String(r.cod_stazione || "").trim();
     if (!code) continue;
-    if (!agg.has(code)) {
-      agg.set(code, { cod_stazione:code, nome_stazione:stationName(code,r.nome_stazione||""), corse_osservate:0, in_ritardo:0, minuti_ritardo_tot:0, cancellate_tot:0, soppresse:0 });
+    const city = stationCity(code, r.nome_stazione || code);
+    if (!city) continue;
+    const cityKey = capoluogoKey(city);
+    if (!cityKey) continue;  // skip non-capoluogo stations
+
+    if (!agg.has(cityKey)) {
+      agg.set(cityKey, { nome: prettyCityName(cityKey, city), corse_osservate:0, in_ritardo:0, minuti_ritardo_tot:0, cancellate_tot:0, soppresse:0 });
     }
-    const a = agg.get(code);
+    const a = agg.get(cityKey);
     a.corse_osservate += toNum(r.corse_osservate);
     a.in_ritardo += toNum(r.in_ritardo);
     a.minuti_ritardo_tot += toNum(r.minuti_ritardo_tot);
@@ -1059,7 +1065,7 @@ function renderStationsTop10() {
   out.sort((a, b) => toNum(b[metric]) - toNum(a[metric]));
   const top10 = out.slice(0, 10).reverse();
 
-  const yLabels = top10.map((o) => o.nome_stazione || o.cod_stazione);
+  const yLabels = top10.map((o) => o.nome);
   const xValues = top10.map((o) => toNum(o[metric]));
   const label = stationsMetricLabel();
 
