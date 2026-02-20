@@ -1,0 +1,6 @@
+mese,tipo_giorno,fascia_oraria,corse_osservate,effettuate,cancellate,soppresse,parzialmente_cancellate,info_mancante,in_orario,in_ritardo,in_anticipo,oltre_5,oltre_10,oltre_15,oltre_30,oltre_60,minuti_ritardo_tot,minuti_anticipo_tot,minuti_netti_tot,ritardo_medio,ritardo_mediano,p90,p95,cancellate_tot
+2024-06,weekend,mattina,1505,1505,0,0,0,0,667,199,634,199,77,34,9,2,3250.0,1723.0,1527.0,1.018,0.0,5.100000000000136,10.0,0
+2024-06,weekend,notte,587,587,0,0,0,0,243,59,282,59,26,15,4,0,1064.0,884.0,180.0,0.3082191780821918,0.0,4.7000000000000455,8.850000000000023,0
+2024-06,weekend,pomeriggio,1205,1205,0,0,0,0,499,245,453,245,117,63,20,6,4141.0,1267.0,2874.0,2.401002506265664,1.0,9.0,15.0,0
+2024-06,weekend,sera,1013,1013,0,0,0,0,419,187,403,187,100,54,19,5,3484.0,1111.0,2373.0,2.3518334985133795,1.0,9.0,15.0,0
+2024-06,weekend,tarda_mattina,149,149,0,0,0,0,51,38,60,38,19,13,6,1,723.0,229.0,494.0,3.315436241610738,1.0,11.200000000000017,19.599999999999994,0

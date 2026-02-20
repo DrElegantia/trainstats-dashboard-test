@@ -1,0 +1,2 @@
+mese,corse_osservate,effettuate,cancellate,soppresse,parzialmente_cancellate,info_mancante,in_orario,in_ritardo,in_anticipo,oltre_5,oltre_10,oltre_15,oltre_30,oltre_60,minuti_ritardo_tot,minuti_anticipo_tot,minuti_netti_tot,ritardo_medio,ritardo_mediano,p90,p95,cancellate_tot
+2024-06,4459,4459,0,0,0,0,1879,728,1832,728,339,179,58,14,12662.0,5214.0,7448.0,1.677855372831719,0.0,7.0,13.0,0
