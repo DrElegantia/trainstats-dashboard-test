@@ -330,6 +330,79 @@ function buildStationItems(codes) {
   return items;
 }
 
+/**
+ * Enrich stationsRef with code→name mappings extracted from loaded fact tables.
+ * This fixes the problem where station codes change over time (e.g. N_xxx → S0xxxx)
+ * and the newer code is missing from stations_dim.csv.
+ * For unknown codes, we look up the name from fact rows and inherit coordinates
+ * from an existing entry with the same normalized name.
+ */
+function enrichStationsRefFromFacts() {
+  // Collect code→name pairs from all loaded datasets
+  const codeNamePairs = [];
+
+  for (const r of (state.data.stationsMonthNode || [])) {
+    const code = String(r.cod_stazione || "").trim();
+    const name = String(r.nome_stazione || "").trim();
+    if (code && name) codeNamePairs.push([code, name]);
+  }
+  for (const r of (state.data.stationsDetailNode || [])) {
+    const code = String(r.cod_stazione || "").trim();
+    const name = String(r.nome_stazione || "").trim();
+    if (code && name) codeNamePairs.push([code, name]);
+  }
+  for (const r of (state.data.odMonthCat || [])) {
+    const cp = String(r.cod_partenza || "").trim();
+    const np = String(r.nome_partenza || "").trim();
+    if (cp && np) codeNamePairs.push([cp, np]);
+    const ca = String(r.cod_arrivo || "").trim();
+    const na = String(r.nome_arrivo || "").trim();
+    if (ca && na) codeNamePairs.push([ca, na]);
+  }
+  for (const r of (state.data.odDetailCat || [])) {
+    const cp = String(r.cod_partenza || "").trim();
+    const np = String(r.nome_partenza || "").trim();
+    if (cp && np) codeNamePairs.push([cp, np]);
+    const ca = String(r.cod_arrivo || "").trim();
+    const na = String(r.nome_arrivo || "").trim();
+    if (ca && na) codeNamePairs.push([ca, na]);
+  }
+  for (const r of (state.data.histStationsMonthRuolo || [])) {
+    const code = String(r.cod_stazione || "").trim();
+    const name = String(r.nome_stazione || "").trim();
+    if (code && name) codeNamePairs.push([code, name]);
+  }
+
+  // Build a name→coords lookup from existing stationsRef entries
+  const nameToCoords = new Map();
+  for (const [, ref] of state.stationsRef) {
+    if (!ref.name) continue;
+    const key = normalizeText(ref.name);
+    if (!key) continue;
+    if (Number.isFinite(ref.lat) && Number.isFinite(ref.lon) && !nameToCoords.has(key)) {
+      nameToCoords.set(key, { lat: ref.lat, lon: ref.lon, city: ref.city || "" });
+    }
+  }
+
+  // Add missing codes to stationsRef, inheriting coords from same-name entries
+  let enriched = 0;
+  for (const [code, name] of codeNamePairs) {
+    if (state.stationsRef.has(code)) continue;
+    const key = normalizeText(name);
+    const coords = nameToCoords.get(key);
+    state.stationsRef.set(code, {
+      code,
+      name,
+      lat: coords ? coords.lat : NaN,
+      lon: coords ? coords.lon : NaN,
+      city: coords ? coords.city : ""
+    });
+    enriched++;
+  }
+
+  if (enriched > 0) console.log("enrichStationsRefFromFacts: added " + enriched + " codes from fact tables");
+}
+
 /* Map: station name (normalized) -> array of all codes sharing that name */
 function buildNameToCodesMap() {
   const map = new Map();
@@ -1201,6 +1274,8 @@ async function lazyLoadCSV(fileName, stateKey) {
   const t = await fetchTextAny(candidateFilePaths(state.dataBase, fileName));
   state.data[stateKey] = t ? parseCSV(t) : [];
   _lazyLoaded[fileName] = true;
+  // Re-enrich stationsRef with any new code→name mappings from the loaded data
+  enrichStationsRefFromFacts();
 }
 
 async function ensureStationsData() {
@@ -1381,6 +1456,11 @@ async function loadAll() {
     const lon = parseNumberAny(r.lon ?? r.lng ?? r.longitude ?? r.longitudine ?? r.x);
     state.stationsRef.set(code, { code, name, lat: Number.isFinite(lat)?lat:NaN, lon: Number.isFinite(lon)?lon:NaN, city });
   }
+
+  // Enrich stationsRef with code→name mappings from fact tables.
+  // This handles codes that changed over time (e.g. S01700 replacing N_ACF3D2764DA3
+  // for Milano Centrale) and are missing from stations_dim.csv.
+  enrichStationsRefFromFacts();
 
   const capRows = await loadCapoluoghiAnyBase(base);
   state.capoluoghiSet = new Set(
