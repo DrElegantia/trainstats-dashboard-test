@@ -608,14 +608,22 @@ function initFilters() {
     catSel.onchange = () => { state.filters.cat = catSel.value || "all"; renderAll(); };
   }
 
-  const deps = uniq([
-    ...(state.data.odMonthCat || []).map((r) => r.cod_partenza),
-    ...(state.data.odDetailCat || []).map((r) => r.cod_partenza)
-  ].filter(Boolean));
-  const arrs = uniq([
-    ...(state.data.odMonthCat || []).map((r) => r.cod_arrivo),
-    ...(state.data.odDetailCat || []).map((r) => r.cod_arrivo)
-  ].filter(Boolean));
+  let deps, arrs;
+  if (isMobile() && !(state.data.odMonthCat && state.data.odMonthCat.length)) {
+    // On mobile, od data may not be loaded yet; use stationsRef for dropdown lists
+    const allCodes = Array.from(state.stationsRef.keys());
+    deps = allCodes;
+    arrs = allCodes;
+  } else {
+    deps = uniq([
+      ...(state.data.odMonthCat || []).map((r) => r.cod_partenza),
+      ...(state.data.odDetailCat || []).map((r) => r.cod_partenza)
+    ].filter(Boolean));
+    arrs = uniq([
+      ...(state.data.odMonthCat || []).map((r) => r.cod_arrivo),
+      ...(state.data.odDetailCat || []).map((r) => r.cod_arrivo)
+    ].filter(Boolean));
+  }
 
   const depItems = buildStationItems(deps);
   const arrItems = buildStationItems(arrs);
@@ -626,14 +634,24 @@ function initFilters() {
     fillStationSelect(depSel, depItems, "");
     ensureSearchInput(depSel, "depSearch", "Cerca stazione di partenza", depItems);
     depSel.value = state.filters.dep || "all";
-    depSel.onchange = () => { state.filters.dep = depSel.value || "all"; updateDepAliases(); renderAll(); };
+    depSel.onchange = () => {
+      state.filters.dep = depSel.value || "all"; updateDepAliases();
+      if (isMobile() && state.filters.dep !== "all") {
+        ensureOdData().then(renderAll);
+      } else { renderAll(); }
+    };
   }
 
   if (arrSel) {
     fillStationSelect(arrSel, arrItems, "");
     ensureSearchInput(arrSel, "arrSearch", "Cerca stazione di arrivo", arrItems);
     arrSel.value = state.filters.arr || "all";
-    arrSel.onchange = () => { state.filters.arr = arrSel.value || "all"; updateArrAliases(); renderAll(); };
+    arrSel.onchange = () => {
+      state.filters.arr = arrSel.value || "all"; updateArrAliases();
+      if (isMobile() && state.filters.arr !== "all") {
+        ensureOdData().then(renderAll);
+      } else { renderAll(); }
+    };
   }
 
   if (mapMetricSel) {
@@ -1173,6 +1191,30 @@ function renderMap() {
   setTimeout(() => { try { state.map.invalidateSize(); } catch {} }, 100);
 }
 
+/* ────────────────── mobile lazy loading ────────────────── */
+
+const _lazyLoaded = {};
+
+async function lazyLoadCSV(fileName, stateKey) {
+  if (_lazyLoaded[fileName]) return;
+  if (state.data[stateKey] && state.data[stateKey].length > 0) { _lazyLoaded[fileName] = true; return; }
+  const t = await fetchTextAny(candidateFilePaths(state.dataBase, fileName));
+  state.data[stateKey] = t ? parseCSV(t) : [];
+  _lazyLoaded[fileName] = true;
+}
+
+async function ensureStationsData() {
+  await lazyLoadCSV("stazioni_mese_categoria_nodo.csv", "stationsMonthNode");
+}
+
+async function ensureOdData() {
+  await lazyLoadCSV("od_mese_categoria.csv", "odMonthCat");
+}
+
+async function ensureHistStationsData() {
+  await lazyLoadCSV("hist_stazioni_mese_categoria_ruolo.csv", "histStationsMonthRuolo");
+}
+
 /* ────────────────── collapsible cards ────────────────── */
 
 function initCollapsibleCards() {
@@ -1187,9 +1229,22 @@ function initCollapsibleCards() {
         if (!chartEl) return;
         const id = chartEl.id;
         if (id === "chartDelayIndex" || id === "chartMonthly") renderSeries();
-        else if (id === "chartHist") renderHist();
-        else if (id === "map") { initMap(); renderMap(); setTimeout(function(){ try{state.map.invalidateSize();}catch{} },200); }
-        else if (id === "chartStationsTop10") renderStationsTop10();
+        else if (id === "chartHist") {
+          if (isMobile() && hasStationFilter()) {
+            ensureHistStationsData().then(renderHist);
+          } else { renderHist(); }
+        }
+        else if (id === "map") {
+          initMap();
+          if (isMobile()) {
+            ensureStationsData().then(function() { renderMap(); setTimeout(function(){ try{state.map.invalidateSize();}catch{} },200); });
+          } else { renderMap(); setTimeout(function(){ try{state.map.invalidateSize();}catch{} },200); }
+        }
+        else if (id === "chartStationsTop10") {
+          if (isMobile()) {
+            ensureStationsData().then(renderStationsTop10);
+          } else { renderStationsTop10(); }
+        }
       }
     });
   });
@@ -1254,6 +1309,24 @@ async function loadAll() {
   const files = state.manifest && Array.isArray(state.manifest.gold_files) && state.manifest.gold_files.length
     ? state.manifest.gold_files : safeManifestDefaults().gold_files;
 
+  // On mobile, skip heavy files (>1 MB) to avoid crashing the browser.
+  // They will be lazy-loaded on demand when the user expands a card.
+  const HEAVY_FILES_MOBILE = new Set([
+    "od_mese_categoria.csv",               // ~10 MB
+    "od_dettaglio_categoria.csv",           // ~42 MB
+    "hist_stazioni_mese_categoria_ruolo.csv",  // ~12 MB
+    "hist_stazioni_dettaglio_categoria_ruolo.csv", // ~72 MB
+    "stazioni_mese_categoria_nodo.csv",     // ~2.6 MB
+    "stazioni_dettaglio_categoria_nodo.csv", // ~17 MB
+    "stazioni_mese_categoria_ruolo.csv",    // ~4.6 MB
+    "stazioni_dettaglio_categoria_ruolo.csv", // ~28 MB
+    "kpi_dettaglio.csv",                    // detail
+    "kpi_dettaglio_categoria.csv",          // detail
+    "hist_dettaglio_categoria.csv"          // detail
+  ]);
+
+  const mobile = isMobile();
+
   const wanted = uniq([
     ...files,
     "kpi_mese.csv",
@@ -1270,14 +1343,16 @@ async function loadAll() {
     "hist_stazioni_dettaglio_categoria_ruolo.csv"
   ]);
 
-  const texts = await Promise.all(wanted.map((f) => fetchTextAny(candidateFilePaths(base, f))));
+  // On mobile, only fetch lightweight files
+  const toFetch = mobile ? wanted.filter((f) => !HEAVY_FILES_MOBILE.has(f)) : wanted;
+
+  const texts = await Promise.all(toFetch.map((f) => fetchTextAny(candidateFilePaths(base, f))));
 
   const parsed = {};
-  for (let i = 0; i < wanted.length; i++) {
-    parsed[wanted[i]] = texts[i] ? parseCSV(texts[i]) : [];
+  for (let i = 0; i < toFetch.length; i++) {
+    parsed[toFetch[i]] = texts[i] ? parseCSV(texts[i]) : [];
   }
 
-  const mobile = isMobile();
   state.data.kpiMonth              = parsed["kpi_mese.csv"] || [];
   state.data.kpiMonthCat           = parsed["kpi_mese_categoria.csv"] || [];
   state.data.kpiDetail             = mobile ? [] : (parsed["kpi_dettaglio.csv"] || []);
