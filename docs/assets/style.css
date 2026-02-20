@@ -156,6 +156,7 @@ button:hover {
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-wrap: wrap;
 }
 
 .kpis {
@@ -207,6 +208,8 @@ button:hover {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 10px;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .card-header h2 {
@@ -217,6 +220,7 @@ button:hover {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .card-toggle {
@@ -377,21 +381,33 @@ button:hover {
 @media (max-width: 600px) {
   .topbar { padding: 12px 10px 8px 10px; flex-direction: column; align-items: flex-start; gap: 4px; }
   .title h1 { font-size: 16px; }
-  .panel { margin: 8px; padding: 10px; }
+  .meta { font-size: 10px; word-break: break-all; text-align: left; }
+  .panel { margin: 6px; padding: 8px; }
   .filters-row--primary { grid-template-columns: 1fr; }
   .filters-row--extra { grid-template-columns: 1fr; }
   .kpis { grid-template-columns: 1fr 1fr; gap: 6px; }
   .kpi { padding: 8px; }
   .kpiValue { font-size: 16px; }
   .kpiLabel { font-size: 10px; }
-  .chart { height: 240px; }
-  .chart--tall { height: 300px; }
-  .map { height: 240px; }
-  .grid2 { gap: 8px; }
-  .card { padding: 8px; }
-  .card h2 { font-size: 13px; }
+  .chart { height: 220px; }
+  .chart--tall { height: 260px; }
+  .map { height: 220px; }
+  .grid2 { gap: 6px; }
+  .card { padding: 6px; }
+  .card h2 { font-size: 12px; }
+  .card-header { gap: 4px; }
+  .card-select { font-size: 11px; padding: 3px 6px; }
   .month-range { flex-direction: column; gap: 4px; }
   .month-range select { width: 100%; }
   .month-sep { display: none; }
+  .info-tip[data-tooltip]:hover::after,
+  .info-tip.tip-active[data-tooltip]::after { max-width: 200px; min-width: 120px; font-size: 10px; left: 0; transform: none; }
+  .toggle-pill { min-width: 22px; height: 22px; font-size: 10px; padding: 0 5px; }
+}
+
+@media (max-width: 380px) {
+  .kpis { grid-template-columns: 1fr; }
+  .kpiLabel { font-size: 11px; }
+  .kpiValue { font-size: 18px; }
 }
 

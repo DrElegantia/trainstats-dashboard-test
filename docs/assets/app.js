@@ -73,6 +73,15 @@ function uniq(arr) { return Array.from(new Set(arr)); }
 
 function isMobile() { return window.innerWidth <= 600; }
 
+function mobileChartMargins(desktop) {
+  if (!isMobile()) return desktop;
+  return { l: Math.min(desktop.l || 50, 35), r: Math.min(desktop.r || 20, 10), t: Math.min(desktop.t || 10, 5), b: Math.min(desktop.b || 50, 40) };
+}
+
+function mobileFont() {
+  return isMobile() ? { color: "#e8eefc", size: 9 } : { color: "#e8eefc" };
+}
+
 function candidateFilePaths(root, rel) {
   const r = ensureTrailingSlash(root);
   const clean = String(rel || "").replace(/^\/+/, "");
@@ -917,7 +926,7 @@ function renderSeries() {
     const di = seriesDelayIndex();
     Plotly.react(diEl,
       [{ x: di.x, y: di.y, type: "scatter", mode: "lines+markers", name: "Delay Index (%)", line: { color: "#ff7aa2" } }],
-      { margin:{l:55,r:20,t:10,b:50}, yaxis:{title:"Delay Index (%)",rangemode:"tozero"}, xaxis:{type:"category"}, paper_bgcolor:"rgba(0,0,0,0)", plot_bgcolor:"rgba(0,0,0,0)", font:{color:"#e8eefc"} },
+      { margin:mobileChartMargins({l:55,r:20,t:10,b:50}), yaxis:{title:isMobile()?"":"Delay Index (%)",rangemode:"tozero"}, xaxis:{type:"category"}, paper_bgcolor:"rgba(0,0,0,0)", plot_bgcolor:"rgba(0,0,0,0)", font:mobileFont() },
       { displayModeBar: false, responsive: true }
     );
   }
@@ -927,7 +936,7 @@ function renderSeries() {
     const yTitle = metricLabel();
     Plotly.react(mEl,
       [{ x: m.x, y: m.y, type: "scatter", mode: "lines+markers", name: yTitle }],
-      { margin:{l:50,r:20,t:10,b:50}, yaxis:{title:yTitle,rangemode:"tozero"}, xaxis:{type:"category"}, paper_bgcolor:"rgba(0,0,0,0)", plot_bgcolor:"rgba(0,0,0,0)", font:{color:"#e8eefc"} },
+      { margin:mobileChartMargins({l:50,r:20,t:10,b:50}), yaxis:{title:isMobile()?"":yTitle,rangemode:"tozero"}, xaxis:{type:"category"}, paper_bgcolor:"rgba(0,0,0,0)", plot_bgcolor:"rgba(0,0,0,0)", font:mobileFont() },
       { displayModeBar: false, responsive: true }
     );
   }
@@ -998,7 +1007,7 @@ function renderHist() {
 
   Plotly.react(chart,
     [{ x, y, type: "bar", name: showPct ? "%" : "Conteggio" }],
-    { margin:{l:50,r:20,t:10,b:70}, yaxis:{title:showPct?"%":"Conteggio",rangemode:"tozero"}, xaxis:{tickangle:-35}, paper_bgcolor:"rgba(0,0,0,0)", plot_bgcolor:"rgba(0,0,0,0)", font:{color:"#e8eefc"} },
+    { margin:mobileChartMargins({l:50,r:20,t:10,b:70}), yaxis:{title:isMobile()?"":showPct?"%":"Conteggio",rangemode:"tozero"}, xaxis:{tickangle:isMobile()?-45:-35,tickfont:{size:isMobile()?7:undefined}}, paper_bgcolor:"rgba(0,0,0,0)", plot_bgcolor:"rgba(0,0,0,0)", font:mobileFont() },
     { displayModeBar: false, responsive: true }
   );
 }
@@ -1082,7 +1091,7 @@ function renderStationsTop10() {
 
   Plotly.react(chart,
     [{ x:xValues, y:yLabels, type:"bar", orientation:"h", name:label, marker:{color:"rgba(122,162,255,0.75)"} }],
-    { margin:{l:180,r:30,t:10,b:50}, xaxis:{title:label,rangemode:"tozero"}, yaxis:{automargin:true}, paper_bgcolor:"rgba(0,0,0,0)", plot_bgcolor:"rgba(0,0,0,0)", font:{color:"#e8eefc"} },
+    { margin:isMobile()?{l:10,r:10,t:10,b:40}:{l:180,r:30,t:10,b:50}, xaxis:{title:isMobile()?"":label,rangemode:"tozero"}, yaxis:{automargin:true}, paper_bgcolor:"rgba(0,0,0,0)", plot_bgcolor:"rgba(0,0,0,0)", font:mobileFont() },
     { displayModeBar: false, responsive: true }
   );
 }
