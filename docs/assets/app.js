@@ -17,6 +17,8 @@ window.addEventListener("unhandledrejection", (e) => {
   console.error(r);
 });
 
+/* ────────────────── fetch helpers ────────────────── */
+
 async function fetchText(path) {
   const r = await fetch(path, { cache: "default" });
   if (!r.ok) throw new Error("Failed fetch " + path + " (" + r.status + ")");
@@ -30,19 +32,11 @@ async function fetchJson(path) {
 }
 
 async function fetchTextOrNull(path) {
-  try {
-    return await fetchText(path);
-  } catch {
-    return null;
-  }
+  try { return await fetchText(path); } catch { return null; }
 }
 
 async function fetchJsonOrNull(path) {
-  try {
-    return await fetchJson(path);
-  } catch {
-    return null;
-  }
+  try { return await fetchJson(path); } catch { return null; }
 }
 
 function ensureTrailingSlash(p) {
@@ -56,9 +50,6 @@ function isLfsPointer(t) {
   if (typeof t !== "string") return false;
   const trimmed = t.trimStart();
   if (!trimmed.startsWith("version https://git-lfs.github.com")) return false;
-  // A real LFS pointer has exactly 3 lines with no commas on the version line.
-  // A corrupted CSV (produced when save_gold_tables reads a pointer as CSV) has
-  // comma-separated column names on the first line — treat that as real data.
   return !trimmed.split("\n")[0].includes(",");
 }
 
@@ -78,9 +69,7 @@ async function fetchJsonAny(paths) {
   return null;
 }
 
-function uniq(arr) {
-  return Array.from(new Set(arr));
-}
+function uniq(arr) { return Array.from(new Set(arr)); }
 
 function candidateFilePaths(root, rel) {
   const r = ensureTrailingSlash(root);
@@ -96,12 +85,10 @@ async function pickDataBase() {
     "gold/manifest.json",
     "kpi_mese_categoria.csv",
     "gold/kpi_mese_categoria.csv",
-    "kpi_giorno_categoria.csv",
-    "gold/kpi_giorno_categoria.csv",
+    "kpi_dettaglio_categoria.csv",
+    "gold/kpi_dettaglio_categoria.csv",
     "kpi_mese.csv",
-    "gold/kpi_mese.csv",
-    "kpi_giorno.csv",
-    "gold/kpi_giorno.csv"
+    "gold/kpi_mese.csv"
   ];
 
   for (const base0 of DATA_ROOT_CANDIDATES) {
@@ -114,24 +101,16 @@ async function pickDataBase() {
   return "data/";
 }
 
+/* ────────────────── CSV parser ────────────────── */
+
 function detectDelimiter(line) {
   const s = String(line || "");
-  let comma = 0,
-    semi = 0,
-    tab = 0;
+  let comma = 0, semi = 0, tab = 0;
   let inQ = false;
   for (let i = 0; i < s.length; i++) {
     const ch = s[i];
-    if (ch === '"') {
-      if (inQ && s[i + 1] === '"') i++;
-      else inQ = !inQ;
-      continue;
-    }
-    if (!inQ) {
-      if (ch === ",") comma++;
-      else if (ch === ";") semi++;
-      else if (ch === "\t") tab++;
-    }
+    if (ch === '"') { if (inQ && s[i + 1] === '"') i++; else inQ = !inQ; continue; }
+    if (!inQ) { if (ch === ",") comma++; else if (ch === ";") semi++; else if (ch === "\t") tab++; }
   }
   if (semi > comma && semi >= tab) return ";";
   if (tab > comma && tab > semi) return "\t";
@@ -145,20 +124,8 @@ function splitCSVLine(line, delim) {
   let inQ = false;
   for (let i = 0; i < line.length; i++) {
     const ch = line[i];
-    if (ch === '"') {
-      if (inQ && line[i + 1] === '"') {
-        cur += '"';
-        i++;
-      } else {
-        inQ = !inQ;
-      }
-      continue;
-    }
-    if (ch === d && !inQ) {
-      out.push(cur);
-      cur = "";
-      continue;
-    }
+    if (ch === '"') { if (inQ && line[i + 1] === '"') { cur += '"'; i++; } else { inQ = !inQ; } continue; }
+    if (ch === d && !inQ) { out.push(cur); cur = ""; continue; }
     cur += ch;
   }
   out.push(cur);
@@ -184,10 +151,9 @@ function parseCSV(text) {
   return rows;
 }
 
-function toNum(x) {
-  const v = Number(x);
-  return Number.isFinite(v) ? v : 0;
-}
+/* ────────────────── format helpers ────────────────── */
+
+function toNum(x) { const v = Number(x); return Number.isFinite(v) ? v : 0; }
 
 function parseNumberAny(x) {
   if (x === null || typeof x === "undefined") return NaN;
@@ -200,9 +166,7 @@ function parseNumberAny(x) {
   return Number.isFinite(v) ? v : NaN;
 }
 
-function fmtInt(x) {
-  return Math.round(Number(x) || 0).toLocaleString("it-IT");
-}
+function fmtInt(x) { return Math.round(Number(x) || 0).toLocaleString("it-IT"); }
 
 function fmtFloat(x) {
   const v = Number(x);
@@ -216,27 +180,18 @@ function normalizeText(s) {
   return base.replace(/[\u0300-\u036f]/g, "");
 }
 
-function yearFromMonth(mese) {
-  return String(mese || "").slice(0, 4);
-}
+function yearFromMonth(mese) { return String(mese || "").slice(0, 4); }
 
 function firstEl(ids) {
-  for (const id of ids) {
-    const el = document.getElementById(id);
-    if (el) return el;
-  }
+  for (const id of ids) { const el = document.getElementById(id); if (el) return el; }
   return null;
 }
 
-function setTextByIds(ids, value) {
-  const el = firstEl(ids);
-  if (el) el.innerText = value;
-}
+function setTextByIds(ids, value) { const el = firstEl(ids); if (el) el.innerText = value; }
 
-function setMeta(text) {
-  const el = document.getElementById("metaBox");
-  if (el) el.innerText = text;
-}
+function setMeta(text) { const el = document.getElementById("metaBox"); if (el) el.innerText = text; }
+
+/* ────────────────── manifest defaults ────────────────── */
 
 function safeManifestDefaults() {
   return {
@@ -244,35 +199,28 @@ function safeManifestDefaults() {
     gold_files: [
       "kpi_mese.csv",
       "kpi_mese_categoria.csv",
-      "kpi_mese_categoria_segmenti.csv",
+      "kpi_dettaglio.csv",
+      "kpi_dettaglio_categoria.csv",
       "hist_mese_categoria.csv",
-      "hist_mese_categoria_segmenti.csv",
+      "hist_dettaglio_categoria.csv",
       "stazioni_mese_categoria_nodo.csv",
-      "stazioni_mese_categoria_nodo_segmenti.csv",
+      "stazioni_dettaglio_categoria_nodo.csv",
       "od_mese_categoria.csv",
-      "od_mese_categoria_segmenti.csv",
+      "od_dettaglio_categoria.csv",
       "hist_stazioni_mese_categoria_ruolo.csv",
-      "hist_stazioni_mese_categoria_ruolo_segmenti.csv"
+      "hist_stazioni_dettaglio_categoria_ruolo.csv"
     ],
     delay_bucket_labels: [
-      "<=-60",
-      "(-60,-30]",
-      "(-30,-15]",
-      "(-15,-10]",
-      "(-10,-5]",
-      "(-5,-1]",
-      "(-1,0]",
-      "(0,1]",
-      "(1,5]",
-      "(5,10]",
-      "(10,15]",
-      "(15,30]",
-      "(30,60]",
-      "(60,120]",
-      ">120"
+      "<=-60","(-60,-30]","(-30,-15]","(-15,-10]","(-10,-5]","(-5,-1]",
+      "(-1,0]","(0,1]","(1,5]","(5,10]","(10,15]","(15,30]","(30,60]","(60,120]",">120"
     ]
   };
 }
+
+/* ────────────────── global state ────────────────── */
+
+const DAY_TYPES   = ["infrasettimanale", "weekend"];
+const TIME_SLOTS  = ["mattina", "tarda_mattina", "pomeriggio", "sera", "notte"];
 
 const state = {
   dataBase: "data/",
@@ -280,21 +228,16 @@ const state = {
   data: {
     kpiMonth: [],
     kpiMonthCat: [],
-    kpiMonthCatSeg: [],
-    kpiDay: [],
-    kpiDayCat: [],
+    kpiDetail: [],
+    kpiDetailCat: [],
     histMonthCat: [],
-    histMonthCatSeg: [],
-    histDayCat: [],
+    histDetailCat: [],
     stationsMonthNode: [],
-    stationsMonthNodeSeg: [],
-    stationsDayNode: [],
+    stationsDetailNode: [],
     odMonthCat: [],
-    odMonthCatSeg: [],
-    odDayCat: [],
+    odDetailCat: [],
     histStationsMonthRuolo: [],
-    histStationsMonthRuoloSeg: [],
-    histStationsDayRuolo: []
+    histStationsDetailRuolo: []
   },
   stationsRef: new Map(),
   capoluoghiSet: new Set(),
@@ -307,10 +250,12 @@ const state = {
     arr: "all",
     month_from: "",
     month_to: "",
-    day_type: { infrasettimanale: true, weekend: true },
-    time_slots: { mattina: true, tarda_mattina: true, pomeriggio: true, sera: true, notte: true }
+    day_types:  [true, true],                    // infrasettimanale, weekend
+    time_slots: [true, true, true, true, true]   // mattina, tarda_mattina, pomeriggio, sera, notte
   }
 };
+
+/* ────────────────── station helpers ────────────────── */
 
 function stationName(code, fallback) {
   const c = String(code || "").trim();
@@ -333,8 +278,7 @@ function stationCoords(code) {
   const c = String(code || "").trim();
   const ref = state.stationsRef.get(c);
   if (!ref) return null;
-  const lat = ref.lat;
-  const lon = ref.lon;
+  const lat = ref.lat, lon = ref.lon;
   if (typeof lat !== "number" || typeof lon !== "number") return null;
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
   return { lat, lon };
@@ -353,15 +297,12 @@ function fillStationSelect(selectEl, items, query) {
   if (!selectEl) return;
   const q = normalizeText(query);
   const cur = selectEl.value;
-
   selectEl.innerHTML = "";
   selectEl.appendChild(new Option("Tutte", "all"));
-
   for (const it of items) {
     if (q && !it.needle.includes(q)) continue;
     selectEl.appendChild(new Option(it.name + " (" + it.code + ")", it.code));
   }
-
   const stillThere = Array.from(selectEl.options).some((o) => o.value === cur);
   selectEl.value = stillThere ? cur : "all";
 }
@@ -382,6 +323,20 @@ function ensureSearchInput(selectEl, inputId, placeholder, items) {
   input.oninput = () => fillStationSelect(selectEl, items, input.value);
 }
 
+/* ────────────────── new filter logic ────────────────── */
+
+function hasDetailFilter() {
+  return state.filters.day_types.some((x) => !x) || state.filters.time_slots.some((x) => !x);
+}
+
+function hasStationFilter() {
+  return state.filters.dep !== "all" || state.filters.arr !== "all";
+}
+
+function hasMonthRange() {
+  return !!(state.filters.month_from || state.filters.month_to);
+}
+
 function passCat(r) {
   if (state.filters.cat === "all") return true;
   return String(r.categoria || "").trim() === state.filters.cat;
@@ -399,57 +354,96 @@ function passArr(r) {
 
 function passYear(r, field) {
   if (state.filters.year === "all") return true;
-  const k = String(r[field] || "");
-  return k.slice(0, 4) === state.filters.year;
+  return String(r[field] || "").slice(0, 4) === state.filters.year;
 }
 
-function hasMonthFilter() {
-  return !!(state.filters.month_from || state.filters.month_to);
-}
+function passMonthRange(r, field) {
+  if (!hasMonthRange()) return true;
+  const m = String(r[field] || "").slice(0, 7);
+  if (!m) return false;
 
-function hasDayTypeFilter() {
-  const f = state.filters.day_type || {};
-  return !(f.infrasettimanale && f.weekend);
-}
-
-function hasTimeSlotFilter() {
-  const f = state.filters.time_slots || {};
-  return !(f.mattina && f.tarda_mattina && f.pomeriggio && f.sera && f.notte);
-}
-
-function passDayType(row) {
-  const selected = state.filters.day_type || {};
-  const v = String(row.tipo_giorno || '').trim();
-  if (!v) return true;
-  if (v === 'infrasettimanale') return !!selected.infrasettimanale;
-  if (v === 'weekend') return !!selected.weekend;
-  return true;
-}
-
-function passTimeSlot(row) {
-  const selected = state.filters.time_slots || {};
-  const v = String(row.fascia_oraria || '').trim();
-  if (!v || v === 'missing') return true;
-  if (v in selected) return !!selected[v];
-  return true;
-}
-
-function passMonthRange(row, field) {
-  if (!hasMonthFilter()) return true;
-  const from = String(state.filters.month_from || '').trim();
-  const to = String(state.filters.month_to || '').trim();
+  const from = String(state.filters.month_from || "").trim();
+  const to   = String(state.filters.month_to || "").trim();
   const a = from || to;
   const b = to || from;
   const lo = a <= b ? a : b;
   const hi = a <= b ? b : a;
-  const m = String(row[field] || '').slice(0, 7);
-  if (!m) return false;
   return m >= lo && m <= hi;
 }
 
-function passSegmentFilters(row) {
-  return passDayType(row) && passTimeSlot(row);
+function passDetailDimensions(r) {
+  // tipo_giorno
+  const dt = state.filters.day_types;
+  if (dt.some((x) => !x)) {
+    const tg = String(r.tipo_giorno || "").trim();
+    const idx = DAY_TYPES.indexOf(tg);
+    if (idx === -1 || !dt[idx]) return false;
+  }
+  // fascia_oraria
+  const ts = state.filters.time_slots;
+  if (ts.some((x) => !x)) {
+    const fa = String(r.fascia_oraria || "").trim();
+    const idx = TIME_SLOTS.indexOf(fa);
+    if (idx === -1 || !ts[idx]) return false;
+  }
+  return true;
 }
+
+/* ────────────────── toggle controls init ────────────────── */
+
+function initToggleControls() {
+  const dayTypeWrap = document.getElementById("dayTypeWrap");
+  const timeSlotWrap = document.getElementById("timeSlotWrap");
+  if (!dayTypeWrap || !timeSlotWrap) return;
+
+  // Already built?
+  if (dayTypeWrap.children.length) return;
+
+  const dayLabels = ["I", "W"];
+  dayLabels.forEach((label, i) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "toggle-pill" + (state.filters.day_types[i] ? "" : " off");
+    b.innerText = label;
+    b.onclick = () => {
+      state.filters.day_types[i] = !state.filters.day_types[i];
+      b.classList.toggle("off", !state.filters.day_types[i]);
+      renderAll();
+    };
+    dayTypeWrap.appendChild(b);
+  });
+
+  const slotLabels = ["Ma", "TM", "Po", "Se", "No"];
+  slotLabels.forEach((label, i) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "toggle-pill" + (state.filters.time_slots[i] ? "" : " off");
+    b.innerText = label;
+    b.onclick = () => {
+      state.filters.time_slots[i] = !state.filters.time_slots[i];
+      b.classList.toggle("off", !state.filters.time_slots[i]);
+      renderAll();
+    };
+    timeSlotWrap.appendChild(b);
+  });
+}
+
+function syncToggleUI() {
+  const dayTypeWrap = document.getElementById("dayTypeWrap");
+  const timeSlotWrap = document.getElementById("timeSlotWrap");
+  if (dayTypeWrap) {
+    Array.from(dayTypeWrap.children).forEach((b, i) => {
+      b.classList.toggle("off", !state.filters.day_types[i]);
+    });
+  }
+  if (timeSlotWrap) {
+    Array.from(timeSlotWrap.children).forEach((b, i) => {
+      b.classList.toggle("off", !state.filters.time_slots[i]);
+    });
+  }
+}
+
+/* ────────────────── map init ────────────────── */
 
 function initMap() {
   const mapEl = firstEl(["map", "mapStations", "stationsMap"]);
@@ -458,175 +452,20 @@ function initMap() {
   if (state.map) return;
 
   state.map = L.map(mapEl.id, { center: [42.5, 12.5], zoom: 6, zoomSnap: 0.5 });
-
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    attribution: "&copy; OpenStreetMap contributors",
-    maxZoom: 18
+    attribution: "&copy; OpenStreetMap contributors", maxZoom: 18
   }).addTo(state.map);
 
-  setTimeout(() => {
-    try {
-      state.map.invalidateSize();
-    } catch {}
-  }, 150);
+  setTimeout(() => { try { state.map.invalidateSize(); } catch {} }, 150);
 }
 
 function clearMarkers() {
   if (!state.map) return;
-  for (const m of state.markers) {
-    try {
-      state.map.removeLayer(m);
-    } catch {}
-  }
+  for (const m of state.markers) { try { state.map.removeLayer(m); } catch {} }
   state.markers = [];
 }
 
-function ensureExtraControls() {
-  const anchor = firstEl(["yearSel", "annoSel", "year"]);
-  if (!anchor) return null;
-
-  let extra = document.getElementById("filtersExtra");
-  if (extra) return extra;
-
-  const host =
-    anchor.closest("#filters") ||
-    anchor.closest(".filters") ||
-    anchor.closest(".controls") ||
-    anchor.closest(".filtersRow") ||
-    anchor.closest(".filtersGrid") ||
-    anchor.parentNode;
-
-  extra = document.createElement("div");
-  extra.id = "filtersExtra";
-  extra.style.display = "flex";
-  extra.style.alignItems = "center";
-  extra.style.gap = "10px";
-  extra.style.marginTop = "8px";
-  extra.style.flexWrap = "wrap";
-
-  if (host && host.parentNode) host.parentNode.insertBefore(extra, host.nextSibling);
-  else (document.body || document.documentElement).appendChild(extra);
-
-  return extra;
-}
-
-function initSegmentControls() {
-  if (document.getElementById("monthFrom")) return;
-
-  const extra = ensureExtraControls();
-  if (!extra) return;
-
-  const monthWrap = document.createElement("div");
-  monthWrap.style.display = "flex";
-  monthWrap.style.alignItems = "center";
-  monthWrap.style.gap = "8px";
-
-  const monthFrom = document.createElement("input");
-  monthFrom.type = "month";
-  monthFrom.id = "monthFrom";
-  monthFrom.value = state.filters.month_from || "";
-
-  const monthTo = document.createElement("input");
-  monthTo.type = "month";
-  monthTo.id = "monthTo";
-  monthTo.value = state.filters.month_to || "";
-
-  monthWrap.appendChild(monthFrom);
-  monthWrap.appendChild(monthTo);
-
-  const dayWrap = document.createElement("div");
-  dayWrap.id = "dayTypeWrap";
-  dayWrap.style.display = "flex";
-  dayWrap.style.alignItems = "center";
-  dayWrap.style.gap = "6px";
-
-  const dayDef = [
-    ["infrasettimanale", "Infrasettimanale", "Lun-Ven"],
-    ["weekend", "Weekend", "Sab-Dom"]
-  ];
-
-  const slotWrap = document.createElement("div");
-  slotWrap.id = "timeSlotWrap";
-  slotWrap.style.display = "flex";
-  slotWrap.style.alignItems = "center";
-  slotWrap.style.gap = "6px";
-  slotWrap.style.flexWrap = "wrap";
-
-  const slotDef = [
-    ["mattina", "Mattina", "06:00-08:59"],
-    ["tarda_mattina", "Tarda mattina", "09:00-13:59"],
-    ["pomeriggio", "Pomeriggio", "14:00-17:59"],
-    ["sera", "Sera", "18:00-21:59"],
-    ["notte", "Notte", "22:00-05:59"]
-  ];
-
-  const mkToggle = (key, label, hint, source, onChange) => {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.innerText = label;
-    b.title = hint;
-    b.dataset.key = key;
-    b.style.height = "28px";
-    b.style.borderRadius = "999px";
-    b.style.border = "1px solid rgba(255,255,255,0.85)";
-    b.style.background = "transparent";
-    b.style.color = "inherit";
-    b.style.cursor = "pointer";
-    b.style.padding = "0 10px";
-    const repaint = () => {
-      const on = !!source[key];
-      b.style.opacity = on ? "1" : "0.35";
-      b.style.borderColor = on ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.35)";
-    };
-    repaint();
-    b.onclick = () => {
-      source[key] = !source[key];
-      repaint();
-      updateFiltersNote();
-      renderAll();
-      onChange();
-    };
-    return b;
-  };
-
-  dayDef.forEach(([k, l, h]) => dayWrap.appendChild(mkToggle(k, l, h, state.filters.day_type, () => {})));
-  slotDef.forEach(([k, l, h]) => slotWrap.appendChild(mkToggle(k, l, h, state.filters.time_slots, () => {})));
-
-  const note = document.createElement("div");
-  note.id = "filtersNote";
-  note.style.fontSize = "12px";
-  note.style.opacity = "0.75";
-
-  const apply = () => {
-    state.filters.month_from = String(monthFrom.value || "").trim();
-    state.filters.month_to = String(monthTo.value || "").trim();
-    updateFiltersNote();
-    renderAll();
-  };
-
-  monthFrom.onchange = apply;
-  monthTo.onchange = apply;
-
-  extra.appendChild(monthWrap);
-  extra.appendChild(dayWrap);
-  extra.appendChild(slotWrap);
-  extra.appendChild(note);
-
-  updateFiltersNote();
-}
-
-function updateFiltersNote() {
-  const el = document.getElementById("filtersNote");
-  if (!el) return;
-  const m = hasMonthFilter();
-  const d = hasDayTypeFilter();
-  const t = hasTimeSlotFilter();
-  if (!m && !d && !t) {
-    el.innerText = "";
-    return;
-  }
-  el.innerText = "Filtri segmentazione attivi su mese/tipologia giornata/fascia oraria.";
-}
+/* ────────────────── filters init ────────────────── */
 
 function initFilters() {
   const yearSel = firstEl(["yearSel", "annoSel", "year"]);
@@ -635,21 +474,19 @@ function initFilters() {
   const arrSel = firstEl(["arrSel", "stazioneArrivoSel", "arrStationSel"]);
   const mapMetricSel = firstEl(["mapMetricSel", "mapSel", "mappaSel"]);
   const resetBtn = firstEl(["resetBtn", "btnReset", "reset"]);
+  const monthFrom = document.getElementById("monthFrom");
+  const monthTo   = document.getElementById("monthTo");
 
   const years = uniq(state.data.kpiMonth.map((r) => yearFromMonth(r.mese)).filter(Boolean)).sort();
-  const cats = uniq(state.data.kpiMonthCat.map((r) => String(r.categoria || "").trim()).filter(Boolean)).sort((a, b) =>
-    String(a).localeCompare(String(b), "it", { sensitivity: "base" })
-  );
+  const cats = uniq(state.data.kpiMonthCat.map((r) => String(r.categoria || "").trim()).filter(Boolean))
+    .sort((a, b) => String(a).localeCompare(String(b), "it", { sensitivity: "base" }));
 
   if (yearSel) {
     yearSel.innerHTML = "";
     yearSel.appendChild(new Option("Tutti", "all"));
     years.forEach((y) => yearSel.appendChild(new Option(y, y)));
     yearSel.value = state.filters.year || "all";
-    yearSel.onchange = () => {
-      state.filters.year = yearSel.value || "all";
-      renderAll();
-    };
+    yearSel.onchange = () => { state.filters.year = yearSel.value || "all"; renderAll(); };
   }
 
   if (catSel) {
@@ -657,24 +494,17 @@ function initFilters() {
     catSel.appendChild(new Option("Tutte", "all"));
     cats.forEach((c) => catSel.appendChild(new Option(c, c)));
     catSel.value = state.filters.cat || "all";
-    catSel.onchange = () => {
-      state.filters.cat = catSel.value || "all";
-      renderAll();
-    };
+    catSel.onchange = () => { state.filters.cat = catSel.value || "all"; renderAll(); };
   }
 
-  const deps = uniq(
-    [
-      ...(state.data.odMonthCat || []).map((r) => r.cod_partenza),
-      ...(state.data.odMonthCatSeg || []).map((r) => r.cod_partenza)
-    ].filter(Boolean)
-  );
-  const arrs = uniq(
-    [
-      ...(state.data.odMonthCat || []).map((r) => r.cod_arrivo),
-      ...(state.data.odMonthCatSeg || []).map((r) => r.cod_arrivo)
-    ].filter(Boolean)
-  );
+  const deps = uniq([
+    ...(state.data.odMonthCat || []).map((r) => r.cod_partenza),
+    ...(state.data.odDetailCat || []).map((r) => r.cod_partenza)
+  ].filter(Boolean));
+  const arrs = uniq([
+    ...(state.data.odMonthCat || []).map((r) => r.cod_arrivo),
+    ...(state.data.odDetailCat || []).map((r) => r.cod_arrivo)
+  ].filter(Boolean));
 
   const depItems = buildStationItems(deps);
   const arrItems = buildStationItems(arrs);
@@ -683,28 +513,28 @@ function initFilters() {
     fillStationSelect(depSel, depItems, "");
     ensureSearchInput(depSel, "depSearch", "Cerca stazione di partenza", depItems);
     depSel.value = state.filters.dep || "all";
-    depSel.onchange = () => {
-      state.filters.dep = depSel.value || "all";
-      renderAll();
-    };
+    depSel.onchange = () => { state.filters.dep = depSel.value || "all"; renderAll(); };
   }
 
   if (arrSel) {
     fillStationSelect(arrSel, arrItems, "");
     ensureSearchInput(arrSel, "arrSearch", "Cerca stazione di arrivo", arrItems);
     arrSel.value = state.filters.arr || "all";
-    arrSel.onchange = () => {
-      state.filters.arr = arrSel.value || "all";
-      renderAll();
-    };
+    arrSel.onchange = () => { state.filters.arr = arrSel.value || "all"; renderAll(); };
   }
 
   if (mapMetricSel) {
     if (!mapMetricSel.value) mapMetricSel.value = "pct_ritardo";
-    mapMetricSel.onchange = () => {
-      renderSeries();
-      renderMap();
-    };
+    mapMetricSel.onchange = () => { renderSeries(); renderMap(); };
+  }
+
+  if (monthFrom) {
+    monthFrom.value = state.filters.month_from || "";
+    monthFrom.onchange = () => { state.filters.month_from = monthFrom.value || ""; renderAll(); };
+  }
+  if (monthTo) {
+    monthTo.value = state.filters.month_to || "";
+    monthTo.onchange = () => { state.filters.month_to = monthTo.value || ""; renderAll(); };
   }
 
   if (resetBtn) {
@@ -715,25 +545,23 @@ function initFilters() {
       state.filters.arr = "all";
       state.filters.month_from = "";
       state.filters.month_to = "";
-      state.filters.day_type = { infrasettimanale: true, weekend: true };
-      state.filters.time_slots = { mattina: true, tarda_mattina: true, pomeriggio: true, sera: true, notte: true };
+      state.filters.day_types = [true, true];
+      state.filters.time_slots = [true, true, true, true, true];
 
       if (yearSel) yearSel.value = "all";
       if (catSel) catSel.value = "all";
       if (depSel) depSel.value = "all";
       if (arrSel) arrSel.value = "all";
-
-      const monthFrom = document.getElementById("monthFrom");
-      const monthTo = document.getElementById("monthTo");
       if (monthFrom) monthFrom.value = "";
       if (monthTo) monthTo.value = "";
 
-      initSegmentControls();
-      updateFiltersNote();
+      syncToggleUI();
       renderAll();
     };
   }
 }
+
+/* ────────────────── hist toggle (count / %) ────────────────── */
 
 function ensureHistToggleStyles() {
   if (document.getElementById("histToggleStyles")) return;
@@ -758,30 +586,17 @@ function updateHistToggleUI() {
   const left = document.getElementById("histModeTextCount");
   const right = document.getElementById("histModeTextPct");
   if (!t || !left || !right) return;
-  if (t.checked) {
-    left.classList.remove("active");
-    right.classList.add("active");
-  } else {
-    left.classList.add("active");
-    right.classList.remove("active");
-  }
+  if (t.checked) { left.classList.remove("active"); right.classList.add("active"); }
+  else { left.classList.add("active"); right.classList.remove("active"); }
 }
 
 function ensureHistToggle() {
   const chart = firstEl(["chartHist", "histChart", "chartDistribution"]);
   if (!chart) return;
-
   ensureHistToggleStyles();
 
   let t = document.getElementById("histModeToggle");
-  if (t) {
-    updateHistToggleUI();
-    t.onchange = () => {
-      updateHistToggleUI();
-      renderHist();
-    };
-    return;
-  }
+  if (t) { updateHistToggleUI(); t.onchange = () => { updateHistToggleUI(); renderHist(); }; return; }
 
   const wrap = document.createElement("div");
   wrap.className = "histToggleWrap";
@@ -809,22 +624,19 @@ function ensureHistToggle() {
 
   sw.appendChild(t);
   sw.appendChild(slider);
-
   wrap.appendChild(left);
   wrap.appendChild(sw);
   wrap.appendChild(right);
 
   const parent = chart.parentNode;
   if (parent) parent.insertBefore(wrap, chart);
-
-  t.onchange = () => {
-    updateHistToggleUI();
-    renderHist();
-  };
+  t.onchange = () => { updateHistToggleUI(); renderHist(); };
 }
 
-function useDailyAggregation() {
-  return false;
+/* ────────────────── metric helpers ────────────────── */
+
+function useDetailAggregation() {
+  return hasDetailFilter() && state.data.kpiDetailCat && state.data.kpiDetailCat.length > 0;
 }
 
 function getMetricMode() {
@@ -858,88 +670,68 @@ function computeValue(corse, ritardo, minuti, sopp, canc) {
   return corse > 0 ? (ritardo / corse) * 100 : 0;
 }
 
+function isCardCollapsed(el) {
+  if (!el) return false;
+  const card = el.closest && el.closest(".card");
+  return card ? card.classList.contains("card--collapsed") : false;
+}
+
+/* ────────────────── common filter pipeline ────────────────── */
+
+function applyCommonFilters(rows, keyField) {
+  if (state.filters.year !== "all") rows = rows.filter((r) => passYear(r, keyField));
+  if (state.filters.cat !== "all") rows = rows.filter(passCat);
+  if (hasMonthRange()) rows = rows.filter((r) => passMonthRange(r, keyField));
+  return rows;
+}
+
+function applyDetailDimFilter(rows) {
+  if (hasDetailFilter()) rows = rows.filter(passDetailDimensions);
+  return rows;
+}
+
+/* ────────────────── KPI ────────────────── */
 
 function renderKPI() {
   const stationFiltered = hasStationFilter();
-  let base, keyField;
+  const useDetail = useDetailAggregation();
+  let base;
 
   if (stationFiltered) {
-    base = state.data.odMonthCatSeg;
-    keyField = "mese";
+    const haveOdDet = state.data.odDetailCat && state.data.odDetailCat.length > 0;
+    base = (useDetail && haveOdDet) ? state.data.odDetailCat : state.data.odMonthCat;
   } else {
-    base = state.data.kpiMonthCatSeg;
-    keyField = "mese";
+    base = useDetail ? state.data.kpiDetailCat : state.data.kpiMonthCat;
   }
 
   let rows = base || [];
-  if (state.filters.year !== "all") rows = rows.filter((r) => passYear(r, keyField));
-  if (state.filters.cat !== "all") rows = rows.filter(passCat);
+  rows = applyCommonFilters(rows, "mese");
+  if (useDetail) rows = applyDetailDimFilter(rows);
 
   if (stationFiltered) {
     if (state.filters.dep !== "all") rows = rows.filter(passDep);
     if (state.filters.arr !== "all") rows = rows.filter(passArr);
   }
 
-  rows = rows.filter((r) => passMonthRange(r, keyField));
-  rows = rows.filter(passSegmentFilters);
-
   const total = rows.reduce((a, r) => a + toNum(r.corse_osservate), 0);
-  const late = rows.reduce((a, r) => a + toNum(r.in_ritardo), 0);
-  const mins = rows.reduce((a, r) => a + toNum(r.minuti_ritardo_tot), 0);
-
-  const canc = rows.reduce((a, r) => {
+  const late  = rows.reduce((a, r) => a + toNum(r.in_ritardo), 0);
+  const mins  = rows.reduce((a, r) => a + toNum(r.minuti_ritardo_tot), 0);
+  const canc  = rows.reduce((a, r) => {
     const v = r.cancellate_tot !== undefined && r.cancellate_tot !== "" ? r.cancellate_tot : r.cancellate;
     return a + toNum(v);
   }, 0);
-
   const sopp = rows.reduce((a, r) => a + toNum(r.soppresse), 0);
 
-  setTextByIds(["cardTotal", "kpiTotal", "kpiCorse", "totalRuns", "corseOsservate", "corse_osservate"], fmtInt(total));
-  setTextByIds(["cardLate", "kpiLate", "kpiRitardo", "lateRuns", "inRitardo", "in_ritardo"], fmtInt(late));
-
-  setTextByIds(
-    [
-      "cardMin",
-      "kpiMinutes",
-      "kpiMinuti",
-      "delayMinutes",
-      "kpiLateMin",
-      "kpiDelayMinutes",
-      "kpiMinTotRitardo",
-      "minutiTotali",
-      "minuti_totali_ritardo",
-      "minutiRitardoTotali",
-      "minutesTotal"
-    ],
-    fmtInt(mins)
-  );
-
-  setTextByIds(["cardCanc", "kpiCancelled", "kpiCancellati", "cancellati", "cancellate"], fmtInt(canc));
-  setTextByIds(["cardSopp", "kpiSuppressed", "kpiSoppressi", "soppressi", "soppresse"], fmtInt(sopp));
+  setTextByIds(["cardTotal","kpiTotal","kpiCorse","totalRuns","corseOsservate","corse_osservate"], fmtInt(total));
+  setTextByIds(["cardLate","kpiLate","kpiRitardo","lateRuns","inRitardo","in_ritardo"], fmtInt(late));
+  setTextByIds(["cardMin","kpiMinutes","kpiMinuti","delayMinutes","kpiLateMin","kpiDelayMinutes","kpiMinTotRitardo","minutiTotali","minuti_totali_ritardo","minutiRitardoTotali","minutesTotal"], fmtInt(mins));
+  setTextByIds(["cardCanc","kpiCancelled","kpiCancellati","cancellati","cancellate"], fmtInt(canc));
+  setTextByIds(["cardSopp","kpiSuppressed","kpiSoppressi","soppressi","soppresse"], fmtInt(sopp));
 }
 
-function seriesMonthly() {
-  const stationFiltered = hasStationFilter();
-  let rows;
+/* ────────────────── series helpers ────────────────── */
 
-  if (stationFiltered) {
-    rows = state.data.odMonthCatSeg && state.data.odMonthCatSeg.length ? state.data.odMonthCatSeg : [];
-  } else {
-    rows = state.data.kpiMonthCatSeg && state.data.kpiMonthCatSeg.length ? state.data.kpiMonthCatSeg : state.data.kpiMonthCat;
-  }
-  rows = rows || [];
-
-  if (state.filters.year !== "all") rows = rows.filter((r) => passYear(r, "mese"));
-  if (state.filters.cat !== "all") rows = rows.filter(passCat);
-
-  if (stationFiltered) {
-    if (state.filters.dep !== "all") rows = rows.filter(passDep);
-    if (state.filters.arr !== "all") rows = rows.filter(passArr);
-  }
-
-  rows = rows.filter((r) => passMonthRange(r, "mese"));
-  rows = rows.filter(passSegmentFilters);
-
+function aggregateByMonth(rows) {
   const by = new Map();
   for (const r of rows) {
     const m = String(r.mese || "").slice(0, 7);
@@ -947,87 +739,72 @@ function seriesMonthly() {
     if (!by.has(m)) by.set(m, { key: m, corse: 0, rit: 0, min: 0, sopp: 0, canc: 0 });
     const o = by.get(m);
     o.corse += toNum(r.corse_osservate);
-    o.rit += toNum(r.in_ritardo);
-    o.min += toNum(r.minuti_ritardo_tot);
-    o.sopp += toNum(r.soppresse);
+    o.rit   += toNum(r.in_ritardo);
+    o.min   += toNum(r.minuti_ritardo_tot);
+    o.sopp  += toNum(r.soppresse);
     const cv = r.cancellate_tot !== undefined && r.cancellate_tot !== "" ? r.cancellate_tot : r.cancellate;
     o.canc += toNum(cv);
   }
-
-  const out = Array.from(by.values()).sort((a, b) => String(a.key).localeCompare(String(b.key)));
-  const x = out.map((o) => o.key);
-  const y = out.map((o) => computeValue(o.corse, o.rit, o.min, o.sopp, o.canc));
-
-  return { x, y };
+  return Array.from(by.values()).sort((a, b) => String(a.key).localeCompare(String(b.key)));
 }
 
-function isCardCollapsed(el) {
-  if (!el) return false;
-  const card = el.closest && el.closest(".card");
-  return card ? card.classList.contains("card--collapsed") : false;
-}
-
-function seriesDelayIndex() {
+function getFilteredSeriesRows() {
   const stationFiltered = hasStationFilter();
+  const useDetail = useDetailAggregation();
   let rows;
 
   if (stationFiltered) {
-    rows = state.data.odMonthCatSeg && state.data.odMonthCatSeg.length ? state.data.odMonthCatSeg : [];
+    const haveOdDet = state.data.odDetailCat && state.data.odDetailCat.length > 0;
+    rows = (useDetail && haveOdDet) ? state.data.odDetailCat : state.data.odMonthCat;
   } else {
-    rows = state.data.kpiMonthCatSeg && state.data.kpiMonthCatSeg.length ? state.data.kpiMonthCatSeg : state.data.kpiMonthCat;
+    rows = useDetail
+      ? (state.data.kpiDetailCat || [])
+      : (state.data.kpiMonthCat && state.data.kpiMonthCat.length ? state.data.kpiMonthCat : state.data.kpiMonth);
   }
   rows = rows || [];
 
-  if (state.filters.year !== "all") rows = rows.filter((r) => passYear(r, "mese"));
-  if (state.filters.cat !== "all") rows = rows.filter(passCat);
+  rows = applyCommonFilters(rows, "mese");
+  if (useDetail) rows = applyDetailDimFilter(rows);
 
   if (stationFiltered) {
     if (state.filters.dep !== "all") rows = rows.filter(passDep);
     if (state.filters.arr !== "all") rows = rows.filter(passArr);
   }
 
-  rows = rows.filter((r) => passMonthRange(r, "mese"));
-  rows = rows.filter(passSegmentFilters);
-
-  const by = new Map();
-  for (const r of rows) {
-    const m = String(r.mese || "").slice(0, 7);
-    if (!m) continue;
-    if (!by.has(m)) by.set(m, { key: m, corse: 0, rit: 0, canc: 0, sopp: 0 });
-    const o = by.get(m);
-    o.corse += toNum(r.corse_osservate);
-    o.rit += toNum(r.in_ritardo);
-    const cv = r.cancellate_tot !== undefined && r.cancellate_tot !== "" ? r.cancellate_tot : r.cancellate;
-    o.canc += toNum(cv);
-    o.sopp += toNum(r.soppresse);
-  }
-
-  const out = Array.from(by.values()).sort((a, b) => String(a.key).localeCompare(String(b.key)));
-  const x = out.map((o) => o.key);
-  const y = out.map((o) => o.corse > 0 ? ((o.rit + o.canc + o.sopp) / o.corse) * 100 : 0);
-
-  return { x, y };
+  return rows;
 }
+
+function seriesMonthly() {
+  const rows = getFilteredSeriesRows();
+  const out = aggregateByMonth(rows);
+  return {
+    x: out.map((o) => o.key),
+    y: out.map((o) => computeValue(o.corse, o.rit, o.min, o.sopp, o.canc))
+  };
+}
+
+function seriesDelayIndex() {
+  const rows = getFilteredSeriesRows();
+  const out = aggregateByMonth(rows);
+  return {
+    x: out.map((o) => o.key),
+    y: out.map((o) => o.corse > 0 ? ((o.rit + o.canc + o.sopp) / o.corse) * 100 : 0)
+  };
+}
+
+/* ────────────────── render series ────────────────── */
 
 function renderSeries() {
   if (typeof Plotly !== "object") return;
 
   const diEl = document.getElementById("chartDelayIndex");
-  const mEl = firstEl(["chartMonthly", "chartMonth", "chartMese", "chartSeriesMonthly"]);
+  const mEl = firstEl(["chartMonthly","chartMonth","chartMese","chartSeriesMonthly"]);
 
   if (diEl && !isCardCollapsed(diEl)) {
     const di = seriesDelayIndex();
-    Plotly.react(
-      diEl,
+    Plotly.react(diEl,
       [{ x: di.x, y: di.y, type: "scatter", mode: "lines+markers", name: "Delay Index (%)", line: { color: "#ff7aa2" } }],
-      {
-        margin: { l: 55, r: 20, t: 10, b: 50 },
-        yaxis: { title: "Delay Index (%)", rangemode: "tozero" },
-        xaxis: { type: "category" },
-        paper_bgcolor: "rgba(0,0,0,0)",
-        plot_bgcolor: "rgba(0,0,0,0)",
-        font: { color: "#e8eefc" }
-      },
+      { margin:{l:55,r:20,t:10,b:50}, yaxis:{title:"Delay Index (%)",rangemode:"tozero"}, xaxis:{type:"category"}, paper_bgcolor:"rgba(0,0,0,0)", plot_bgcolor:"rgba(0,0,0,0)", font:{color:"#e8eefc"} },
       { displayModeBar: false, responsive: true }
     );
   }
@@ -1035,53 +812,42 @@ function renderSeries() {
   if (mEl && !isCardCollapsed(mEl)) {
     const m = seriesMonthly();
     const yTitle = metricLabel();
-    Plotly.react(
-      mEl,
+    Plotly.react(mEl,
       [{ x: m.x, y: m.y, type: "scatter", mode: "lines+markers", name: yTitle }],
-      {
-        margin: { l: 50, r: 20, t: 10, b: 50 },
-        yaxis: { title: yTitle, rangemode: "tozero" },
-        xaxis: { type: "category" },
-        paper_bgcolor: "rgba(0,0,0,0)",
-        plot_bgcolor: "rgba(0,0,0,0)",
-        font: { color: "#e8eefc" }
-      },
+      { margin:{l:50,r:20,t:10,b:50}, yaxis:{title:yTitle,rangemode:"tozero"}, xaxis:{type:"category"}, paper_bgcolor:"rgba(0,0,0,0)", plot_bgcolor:"rgba(0,0,0,0)", font:{color:"#e8eefc"} },
       { displayModeBar: false, responsive: true }
     );
   }
 }
 
-function normalizeBucketLabel(s) {
-  return String(s || "").replace(/\s+/g, "").trim();
-}
+/* ────────────────── render histogram ────────────────── */
+
+function normalizeBucketLabel(s) { return String(s || "").replace(/\s+/g, "").trim(); }
 
 function renderHist() {
   if (typeof Plotly !== "object") return;
-
-  const chart = firstEl(["chartHist", "histChart", "chartDistribution"]);
-  if (!chart) return;
-  if (isCardCollapsed(chart)) return;
+  const chart = firstEl(["chartHist","histChart","chartDistribution"]);
+  if (!chart || isCardCollapsed(chart)) return;
 
   ensureHistToggle();
-
   const toggle = document.getElementById("histModeToggle");
   const showPct = !!(toggle && toggle.checked);
 
   const stationFiltered = hasStationFilter();
-  let base, keyField;
+  const useDetail = useDetailAggregation();
+  let base;
 
   if (stationFiltered) {
-    base = state.data.histStationsMonthRuoloSeg;
-    keyField = "mese";
+    const haveStDet = state.data.histStationsDetailRuolo && state.data.histStationsDetailRuolo.length > 0;
+    base = (useDetail && haveStDet) ? state.data.histStationsDetailRuolo : state.data.histStationsMonthRuolo;
   } else {
-    base = state.data.histMonthCatSeg;
-    keyField = "mese";
+    const haveDetHist = state.data.histDetailCat && state.data.histDetailCat.length > 0;
+    base = (useDetail && haveDetHist) ? state.data.histDetailCat : state.data.histMonthCat;
   }
 
   let rows = base || [];
-
-  if (state.filters.year !== "all") rows = rows.filter((r) => passYear(r, keyField));
-  if (state.filters.cat !== "all") rows = rows.filter(passCat);
+  rows = applyCommonFilters(rows, "mese");
+  if (useDetail) rows = applyDetailDimFilter(rows);
 
   if (stationFiltered) {
     const dep = state.filters.dep;
@@ -1093,12 +859,8 @@ function renderHist() {
     }
   }
 
-  rows = rows.filter((r) => passMonthRange(r, "mese"));
-  rows = rows.filter(passSegmentFilters);
-
   const byBucket = new Map();
   let total = 0;
-
   for (const r of rows) {
     const raw = String(r.bucket_ritardo_arrivo || r.bucket || "").trim();
     if (!raw) continue;
@@ -1109,14 +871,10 @@ function renderHist() {
     byBucket.get(key).count += c;
   }
 
-  const order =
-    Array.isArray(state.manifest.delay_bucket_labels) && state.manifest.delay_bucket_labels.length
-      ? state.manifest.delay_bucket_labels
-      : safeManifestDefaults().delay_bucket_labels;
+  const order = Array.isArray(state.manifest.delay_bucket_labels) && state.manifest.delay_bucket_labels.length
+    ? state.manifest.delay_bucket_labels : safeManifestDefaults().delay_bucket_labels;
 
-  const x = [];
-  const y = [];
-
+  const x = [], y = [];
   for (const lab of order) {
     const key = normalizeBucketLabel(lab);
     const obj = byBucket.get(key);
@@ -1125,42 +883,30 @@ function renderHist() {
     y.push(showPct ? (total > 0 ? (c / total) * 100 : 0) : c);
   }
 
-  Plotly.react(
-    chart,
+  Plotly.react(chart,
     [{ x, y, type: "bar", name: showPct ? "%" : "Conteggio" }],
-    {
-      margin: { l: 50, r: 20, t: 10, b: 70 },
-      yaxis: { title: showPct ? "%" : "Conteggio", rangemode: "tozero" },
-      xaxis: { tickangle: -35 },
-      paper_bgcolor: "rgba(0,0,0,0)",
-      plot_bgcolor: "rgba(0,0,0,0)",
-      font: { color: "#e8eefc" }
-    },
+    { margin:{l:50,r:20,t:10,b:70}, yaxis:{title:showPct?"%":"Conteggio",rangemode:"tozero"}, xaxis:{tickangle:-35}, paper_bgcolor:"rgba(0,0,0,0)", plot_bgcolor:"rgba(0,0,0,0)", font:{color:"#e8eefc"} },
     { displayModeBar: false, responsive: true }
   );
 }
+
+/* ────────────────── map helpers ────────────────── */
 
 function capoluogoKey(cityName) {
   const name = normalizeText(cityName);
   if (!name) return "";
   if (!state.capoluoghiSet || state.capoluoghiSet.size === 0) return name;
   if (state.capoluoghiSet.has(name)) return name;
-
   for (const cap of state.capoluoghiSet) {
     if (name.startsWith(cap + " ") || name.startsWith(cap + "-") || name.startsWith(cap + "'")) return cap;
   }
-
   return "";
 }
-
 
 function prettyCityName(cityKey, fallback) {
   const raw = String(fallback || "").trim();
   if (raw && normalizeText(raw) === cityKey) return raw;
-
-  return String(cityKey || "")
-    .toLowerCase()
-    .replace(/\b([a-zàèéìòù])/g, (m) => m.toUpperCase());
+  return String(cityKey || "").toLowerCase().replace(/\b([a-zàèéìòù])/g, (m) => m.toUpperCase());
 }
 
 function getStationsMetric() {
@@ -1170,53 +916,31 @@ function getStationsMetric() {
 
 function stationsMetricLabel() {
   const m = getStationsMetric();
-  const labels = {
-    pct_ritardo: "% in ritardo",
-    in_ritardo: "In ritardo",
-    minuti_ritardo_tot: "Minuti ritardo",
-    cancellate_tot: "Cancellati",
-    soppresse: "Soppressi",
-    corse_osservate: "Corse osservate"
-  };
+  const labels = { pct_ritardo:"% in ritardo", in_ritardo:"In ritardo", minuti_ritardo_tot:"Minuti ritardo", cancellate_tot:"Cancellati", soppresse:"Soppressi", corse_osservate:"Corse osservate" };
   return labels[m] || m;
 }
 
+/* ────────────────── stations top 10 ────────────────── */
+
 function renderStationsTop10() {
   if (typeof Plotly !== "object") return;
-
   const chart = document.getElementById("chartStationsTop10");
-  if (!chart) return;
-  if (isCardCollapsed(chart)) return;
+  if (!chart || isCardCollapsed(chart)) return;
 
-  const base = state.data.stationsMonthNodeSeg;
-  const keyField = "mese";
+  const useDetail = useDetailAggregation() && state.data.stationsDetailNode && state.data.stationsDetailNode.length > 0;
+  const base = useDetail ? state.data.stationsDetailNode : state.data.stationsMonthNode;
 
   let rows = base || [];
-
-  if (state.filters.year !== "all") rows = rows.filter((r) => passYear(r, keyField));
-  if (state.filters.cat !== "all") rows = rows.filter(passCat);
-
-  rows = rows.filter((r) => passMonthRange(r, "mese"));
-  rows = rows.filter(passSegmentFilters);
+  rows = applyCommonFilters(rows, "mese");
+  if (useDetail) rows = applyDetailDimFilter(rows);
 
   const agg = new Map();
-
   for (const r of rows) {
     const code = String(r.cod_stazione || "").trim();
     if (!code) continue;
-
     if (!agg.has(code)) {
-      agg.set(code, {
-        cod_stazione: code,
-        nome_stazione: stationName(code, r.nome_stazione || ""),
-        corse_osservate: 0,
-        in_ritardo: 0,
-        minuti_ritardo_tot: 0,
-        cancellate_tot: 0,
-        soppresse: 0
-      });
+      agg.set(code, { cod_stazione:code, nome_stazione:stationName(code,r.nome_stazione||""), corse_osservate:0, in_ritardo:0, minuti_ritardo_tot:0, cancellate_tot:0, soppresse:0 });
     }
-
     const a = agg.get(code);
     a.corse_osservate += toNum(r.corse_osservate);
     a.in_ritardo += toNum(r.in_ritardo);
@@ -1227,9 +951,7 @@ function renderStationsTop10() {
   }
 
   let out = Array.from(agg.values());
-  out.forEach((o) => {
-    o.pct_ritardo = o.corse_osservate > 0 ? (o.in_ritardo / o.corse_osservate) * 100 : 0;
-  });
+  out.forEach((o) => { o.pct_ritardo = o.corse_osservate > 0 ? (o.in_ritardo / o.corse_osservate) * 100 : 0; });
 
   const metric = getStationsMetric();
   out.sort((a, b) => toNum(b[metric]) - toNum(a[metric]));
@@ -1239,181 +961,107 @@ function renderStationsTop10() {
   const xValues = top10.map((o) => toNum(o[metric]));
   const label = stationsMetricLabel();
 
-  Plotly.react(
-    chart,
-    [{
-      x: xValues,
-      y: yLabels,
-      type: "bar",
-      orientation: "h",
-      name: label,
-      marker: { color: "rgba(122, 162, 255, 0.75)" }
-    }],
-    {
-      margin: { l: 180, r: 30, t: 10, b: 50 },
-      xaxis: { title: label, rangemode: "tozero" },
-      yaxis: { automargin: true },
-      paper_bgcolor: "rgba(0,0,0,0)",
-      plot_bgcolor: "rgba(0,0,0,0)",
-      font: { color: "#e8eefc" }
-    },
+  Plotly.react(chart,
+    [{ x:xValues, y:yLabels, type:"bar", orientation:"h", name:label, marker:{color:"rgba(122,162,255,0.75)"} }],
+    { margin:{l:180,r:30,t:10,b:50}, xaxis:{title:label,rangemode:"tozero"}, yaxis:{automargin:true}, paper_bgcolor:"rgba(0,0,0,0)", plot_bgcolor:"rgba(0,0,0,0)", font:{color:"#e8eefc"} },
     { displayModeBar: false, responsive: true }
   );
 }
 
+/* ────────────────── map render ────────────────── */
+
 function mapMetricValue(row) {
-  const corse = toNum(row.corse_osservate);
-  const rit = toNum(row.in_ritardo);
-  const min = toNum(row.minuti_ritardo_tot);
-  const sopp = toNum(row.soppresse);
-  const canc = toNum(row.cancellate_tot);
-  return computeValue(corse, rit, min, sopp, canc);
+  return computeValue(toNum(row.corse_osservate), toNum(row.in_ritardo), toNum(row.minuti_ritardo_tot), toNum(row.soppresse), toNum(row.cancellate_tot));
 }
 
 function renderMap() {
   if (!state.map) return;
-
   const mapEl = document.getElementById("map");
   if (isCardCollapsed(mapEl)) return;
 
   clearMarkers();
 
-  const base = state.data.stationsMonthNodeSeg;
-  const keyField = "mese";
+  const useDetail = useDetailAggregation() && state.data.stationsDetailNode && state.data.stationsDetailNode.length > 0;
+  const base = useDetail ? state.data.stationsDetailNode : state.data.stationsMonthNode;
 
   let rows = base || [];
-
-  if (state.filters.year !== "all") rows = rows.filter((r) => passYear(r, keyField));
-  if (state.filters.cat !== "all") rows = rows.filter(passCat);
-
-  rows = rows.filter((r) => passMonthRange(r, "mese"));
-  rows = rows.filter(passSegmentFilters);
+  rows = applyCommonFilters(rows, "mese");
+  if (useDetail) rows = applyDetailDimFilter(rows);
 
   const agg = new Map();
-
   for (const r of rows) {
     const code = String(r.cod_stazione || "").trim();
     if (!code) continue;
-
     const city = stationCity(code, r.nome_stazione || code);
     if (!city) continue;
-
     const cityKey = capoluogoKey(city);
     if (!cityKey) continue;
-
     const coords = stationCoords(code);
     if (!coords) continue;
 
     if (!agg.has(cityKey)) {
-      agg.set(cityKey, {
-        cityKey,
-        nome: prettyCityName(cityKey, city),
-        corse_osservate: 0,
-        in_ritardo: 0,
-        minuti_ritardo_tot: 0,
-        soppresse: 0,
-        cancellate_tot: 0,
-        lat_weighted_sum: 0,
-        lon_weighted_sum: 0,
-        weight_sum: 0
-      });
+      agg.set(cityKey, { cityKey, nome:prettyCityName(cityKey,city), corse_osservate:0, in_ritardo:0, minuti_ritardo_tot:0, soppresse:0, cancellate_tot:0, lat_weighted_sum:0, lon_weighted_sum:0, weight_sum:0 });
     }
-
     const a = agg.get(cityKey);
     const corse = toNum(r.corse_osservate);
     const weight = Math.max(1, corse);
-
     a.corse_osservate += corse;
     a.in_ritardo += toNum(r.in_ritardo);
     a.minuti_ritardo_tot += toNum(r.minuti_ritardo_tot);
     a.soppresse += toNum(r.soppresse);
     const canc = r.cancellate_tot !== undefined && r.cancellate_tot !== "" ? r.cancellate_tot : r.cancellate;
     a.cancellate_tot += toNum(canc);
-
     a.lat_weighted_sum += toNum(coords.lat) * weight;
     a.lon_weighted_sum += toNum(coords.lon) * weight;
     a.weight_sum += weight;
   }
 
-  const pts = Array.from(agg.values())
-    .map((o) => {
-      const w = o.weight_sum > 0 ? o.weight_sum : 1;
-      const v = mapMetricValue(o);
-      return {
-        ...o,
-        coords: { lat: o.lat_weighted_sum / w, lon: o.lon_weighted_sum / w },
-        v
-      };
-    })
-    .filter((o) => Number.isFinite(o.coords.lat) && Number.isFinite(o.coords.lon));
+  const pts = Array.from(agg.values()).map((o) => {
+    const w = o.weight_sum > 0 ? o.weight_sum : 1;
+    return { ...o, coords:{ lat: o.lat_weighted_sum/w, lon: o.lon_weighted_sum/w }, v: mapMetricValue(o) };
+  }).filter((o) => Number.isFinite(o.coords.lat) && Number.isFinite(o.coords.lon));
 
   pts.sort((a, b) => toNum(b.v) - toNum(a.v));
   const top = pts.slice(0, 250);
 
   const values = top.map((p) => Math.max(0, Number(p.v) || 0));
   const maxValue = values.length ? Math.max(...values) : 0;
-  const minRadius = 5;
-  const maxRadius = 22;
+  const minRadius = 5, maxRadius = 22;
 
   const bounds = [];
   for (const p of top) {
     const val = Math.max(0, Number(p.v) || 0);
-    const label = p.nome + "<br>" + metricLabel() + ": " + fmtFloat(val);
-
     const ratio = maxValue > 0 ? Math.sqrt(val / maxValue) : 0;
     const radius = minRadius + ratio * (maxRadius - minRadius);
+    const label = p.nome + "<br>" + metricLabel() + ": " + fmtFloat(val);
 
-    const m = L.circleMarker([p.coords.lat, p.coords.lon], {
-      radius,
-      opacity: 0.9,
-      fillOpacity: 0.6
-    }).addTo(state.map);
-
-    try {
-      m.bindPopup(label);
-    } catch {}
-
+    const m = L.circleMarker([p.coords.lat, p.coords.lon], { radius, opacity:0.9, fillOpacity:0.6 }).addTo(state.map);
+    try { m.bindPopup(label); } catch {}
     state.markers.push(m);
     bounds.push([p.coords.lat, p.coords.lon]);
   }
 
-  if (bounds.length > 3) {
-    try {
-      state.map.fitBounds(bounds, { padding: [20, 20] });
-    } catch {}
-  }
-
-  setTimeout(() => {
-    try {
-      state.map.invalidateSize();
-    } catch {}
-  }, 100);
+  if (bounds.length > 3) { try { state.map.fitBounds(bounds, { padding:[20,20] }); } catch {} }
+  setTimeout(() => { try { state.map.invalidateSize(); } catch {} }, 100);
 }
 
-function renderTables() {
-  renderStationsTop10();
-}
+/* ────────────────── collapsible cards ────────────────── */
 
 function initCollapsibleCards() {
   document.querySelectorAll(".card.collapsible").forEach(function(card) {
     const toggle = card.querySelector(".card-toggle");
     if (!toggle) return;
-
     toggle.addEventListener("click", function() {
       const collapsed = card.classList.toggle("card--collapsed");
       toggle.textContent = collapsed ? "\u25B6" : "\u25BC";
-
       if (!collapsed) {
         const chartEl = card.querySelector(".chart, .map");
         if (!chartEl) return;
         const id = chartEl.id;
         if (id === "chartDelayIndex" || id === "chartMonthly") renderSeries();
         else if (id === "chartHist") renderHist();
-        else if (id === "map") {
-          initMap();
-          renderMap();
-          setTimeout(function() { try { state.map.invalidateSize(); } catch {} }, 200);
-        } else if (id === "chartStationsTop10") renderStationsTop10();
+        else if (id === "map") { initMap(); renderMap(); setTimeout(function(){ try{state.map.invalidateSize();}catch{} },200); }
+        else if (id === "chartStationsTop10") renderStationsTop10();
       }
     });
   });
@@ -1429,9 +1077,11 @@ function renderAll() {
   renderKPI();
   renderSeries();
   renderHist();
-  renderTables();
+  renderStationsTop10();
   renderMap();
 }
+
+/* ────────────────── data loading ────────────────── */
 
 async function loadStationsDimAnyBase(primaryBase) {
   const base = ensureTrailingSlash(primaryBase);
@@ -1473,94 +1123,76 @@ async function loadAll() {
   const built = state.manifest && state.manifest.built_at_utc ? state.manifest.built_at_utc : "";
   setMeta((built ? "Build: " + built : "Build: sconosciuta") + " | base: " + base);
 
-  const files =
-    state.manifest && Array.isArray(state.manifest.gold_files) && state.manifest.gold_files.length
-      ? state.manifest.gold_files
-      : safeManifestDefaults().gold_files;
+  const files = state.manifest && Array.isArray(state.manifest.gold_files) && state.manifest.gold_files.length
+    ? state.manifest.gold_files : safeManifestDefaults().gold_files;
 
   const wanted = uniq([
     ...files,
     "kpi_mese.csv",
     "kpi_mese_categoria.csv",
-    "kpi_mese_categoria_segmenti.csv",
+    "kpi_dettaglio.csv",
+    "kpi_dettaglio_categoria.csv",
     "hist_mese_categoria.csv",
-    "hist_mese_categoria_segmenti.csv",
+    "hist_dettaglio_categoria.csv",
     "stazioni_mese_categoria_nodo.csv",
-    "stazioni_mese_categoria_nodo_segmenti.csv",
+    "stazioni_dettaglio_categoria_nodo.csv",
     "od_mese_categoria.csv",
-    "od_mese_categoria_segmenti.csv",
+    "od_dettaglio_categoria.csv",
     "hist_stazioni_mese_categoria_ruolo.csv",
-    "hist_stazioni_mese_categoria_ruolo_segmenti.csv"
+    "hist_stazioni_dettaglio_categoria_ruolo.csv"
   ]);
 
   const texts = await Promise.all(wanted.map((f) => fetchTextAny(candidateFilePaths(base, f))));
 
   const parsed = {};
   for (let i = 0; i < wanted.length; i++) {
-    const txt = texts[i];
-    parsed[wanted[i]] = txt ? parseCSV(txt) : [];
+    parsed[wanted[i]] = texts[i] ? parseCSV(texts[i]) : [];
   }
 
-  state.data.kpiMonth = parsed["kpi_mese.csv"] || [];
-  state.data.kpiMonthCat = parsed["kpi_mese_categoria.csv"] || [];
-  state.data.kpiDay = parsed["kpi_giorno.csv"] || [];
-  state.data.kpiDayCat = parsed["kpi_giorno_categoria.csv"] || [];
-  state.data.kpiMonthCatSeg = parsed["kpi_mese_categoria_segmenti.csv"] || state.data.kpiMonthCat;
-  state.data.histMonthCat = parsed["hist_mese_categoria.csv"] || [];
-  state.data.histDayCat = parsed["hist_giorno_categoria.csv"] || [];
-  state.data.histMonthCatSeg = parsed["hist_mese_categoria_segmenti.csv"] || state.data.histMonthCat;
-  state.data.stationsMonthNode = parsed["stazioni_mese_categoria_nodo.csv"] || [];
-  state.data.stationsDayNode = parsed["stazioni_giorno_categoria_nodo.csv"] || [];
-  state.data.stationsMonthNodeSeg = parsed["stazioni_mese_categoria_nodo_segmenti.csv"] || state.data.stationsMonthNode;
-  state.data.odMonthCat = parsed["od_mese_categoria.csv"] || [];
-  state.data.odDayCat = parsed["od_giorno_categoria.csv"] || [];
-  state.data.odMonthCatSeg = parsed["od_mese_categoria_segmenti.csv"] || state.data.odMonthCat;
-  state.data.histStationsMonthRuolo = parsed["hist_stazioni_mese_categoria_ruolo.csv"] || [];
-  state.data.histStationsDayRuolo = parsed["hist_stazioni_giorno_categoria_ruolo.csv"] || [];
-  state.data.histStationsMonthRuoloSeg = parsed["hist_stazioni_mese_categoria_ruolo_segmenti.csv"] || state.data.histStationsMonthRuolo;
+  state.data.kpiMonth              = parsed["kpi_mese.csv"] || [];
+  state.data.kpiMonthCat           = parsed["kpi_mese_categoria.csv"] || [];
+  state.data.kpiDetail             = parsed["kpi_dettaglio.csv"] || [];
+  state.data.kpiDetailCat          = parsed["kpi_dettaglio_categoria.csv"] || [];
+  state.data.histMonthCat          = parsed["hist_mese_categoria.csv"] || [];
+  state.data.histDetailCat         = parsed["hist_dettaglio_categoria.csv"] || [];
+  state.data.stationsMonthNode     = parsed["stazioni_mese_categoria_nodo.csv"] || [];
+  state.data.stationsDetailNode    = parsed["stazioni_dettaglio_categoria_nodo.csv"] || [];
+  state.data.odMonthCat            = parsed["od_mese_categoria.csv"] || [];
+  state.data.odDetailCat           = parsed["od_dettaglio_categoria.csv"] || [];
+  state.data.histStationsMonthRuolo  = parsed["hist_stazioni_mese_categoria_ruolo.csv"] || [];
+  state.data.histStationsDetailRuolo = parsed["hist_stazioni_dettaglio_categoria_ruolo.csv"] || [];
 
   const stRows = await loadStationsDimAnyBase(base);
-
   state.stationsRef.clear();
 
   let stationDimBuilt = "";
   for (const r of stRows) {
     const b = r.built_at_utc || r.built_at || r.data_build || r.data || "";
     if (b && !stationDimBuilt) stationDimBuilt = String(b).trim();
-
     const code = String(r.cod_stazione || r.codice || r.cod || "").trim();
     if (!code) continue;
-
     const name = String(r.nome_stazione || r.nome_norm || r.nome || "").trim();
     const city = String(r.citta || r.comune || r.city || r.nome_comune || "").trim();
-
     const lat = parseNumberAny(r.lat ?? r.latitude ?? r.latitudine ?? r.y);
     const lon = parseNumberAny(r.lon ?? r.lng ?? r.longitude ?? r.longitudine ?? r.x);
-
-    state.stationsRef.set(code, {
-      code,
-      name,
-      lat: Number.isFinite(lat) ? lat : NaN,
-      lon: Number.isFinite(lon) ? lon : NaN,
-      city
-    });
+    state.stationsRef.set(code, { code, name, lat: Number.isFinite(lat)?lat:NaN, lon: Number.isFinite(lon)?lon:NaN, city });
   }
 
   const capRows = await loadCapoluoghiAnyBase(base);
   state.capoluoghiSet = new Set(
-    capRows
-      .map((r) => normalizeText(r.citta || r.capoluogo || r.nome || r.city || ""))
-      .filter(Boolean)
+    capRows.map((r) => normalizeText(r.citta || r.capoluogo || r.nome || r.city || "")).filter(Boolean)
   );
 
   initFilters();
-  initSegmentControls();
+  initToggleControls();
+
   const mapCardCollapsed = (function() {
     const mapEl = document.getElementById("map");
     const card = mapEl && mapEl.closest && mapEl.closest(".card");
     return card && card.classList.contains("card--collapsed");
   }());
   if (!mapCardCollapsed) initMap();
+
   ensureHistToggle();
   initCollapsibleCards();
   initStationsMetricSel();
@@ -1569,20 +1201,16 @@ async function loadAll() {
 
   const haveAny =
     (state.data.kpiMonthCat && state.data.kpiMonthCat.length) ||
-    (state.data.kpiMonthCatSeg && state.data.kpiMonthCatSeg.length) ||
-    (state.data.histMonthCatSeg && state.data.histMonthCatSeg.length);
+    (state.data.kpiDetailCat && state.data.kpiDetailCat.length) ||
+    (state.data.histMonthCat && state.data.histMonthCat.length);
 
   const coordCount = Array.from(state.stationsRef.values()).filter((s) => Number.isFinite(s.lat) && Number.isFinite(s.lon)).length;
 
   const metaExtra =
-    " | mese cat: " +
-    (state.data.kpiMonthCat ? state.data.kpiMonthCat.length : 0) +
-    " | mese cat segmenti: " +
-    (state.data.kpiMonthCatSeg ? state.data.kpiMonthCatSeg.length : 0) +
-    " | stazioni dim: " +
-    stRows.length +
-    " | stazioni coord: " +
-    coordCount +
+    " | mese cat: " + (state.data.kpiMonthCat ? state.data.kpiMonthCat.length : 0) +
+    " | dettaglio cat: " + (state.data.kpiDetailCat ? state.data.kpiDetailCat.length : 0) +
+    " | stazioni dim: " + stRows.length +
+    " | stazioni coord: " + coordCount +
     (stationDimBuilt ? " | stations_dim build: " + stationDimBuilt : "");
 
   if (!haveAny) setMeta("Errore: non trovo CSV validi. Base: " + base + metaExtra);
