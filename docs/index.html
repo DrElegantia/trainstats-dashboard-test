@@ -55,8 +55,8 @@
     </div>
     <div class="filters-extra-wrap" id="filtersExtraWrap">
       <div class="filters-row filters-row--extra" id="filtersExtra">
-        <div class="filter">
-          <label>Mese</label>
+        <div class="filter filter--month">
+          <label>Intervallo mese</label>
           <div class="month-range">
             <select id="monthFrom"></select>
             <span class="month-sep">&ndash;</span>
@@ -64,7 +64,7 @@
           </div>
         </div>
         <div class="filter">
-          <label>Tipo giornata <span class="info-tip" data-tooltip="Infrasettimanale = Lun&ndash;Ven&#10;Weekend = Sab&ndash;Dom">&#9432;</span></label>
+          <label>Tipo giornata <span class="info-tip" data-tooltip="Infrasettimanale = Lun&ndash;Ven&#10;Fine settimana = Sab&ndash;Dom">&#9432;</span></label>
           <div id="dayTypeWrap" class="toggle-group"></div>
         </div>
         <div class="filter">
@@ -75,7 +75,7 @@
     </div>
   </section>
 
-  <section class="panel kpis">
+  <section class="panel kpis" data-view="kpi">
     <div class="kpi">
       <div class="kpiLabel">Corse osservate</div>
       <div class="kpiValue" id="kpiTotal"></div>
@@ -99,43 +99,51 @@
   </section>
 
   <section class="panel grid2">
-    <div class="card collapsible">
+    <div class="card collapsible" data-view="series">
       <div class="card-header">
         <h2>Delay Index Mensile</h2>
         <button class="card-toggle" aria-label="Espandi/Collassa">&#9660;</button>
       </div>
       <div class="card-body">
+        <div class="card-desc">Percentuale mensile di treni in ritardo, cancellati o soppressi sul totale delle corse osservate.</div>
+        <div class="filter-badges" id="badgesDelayIndex"></div>
         <div class="note">(In ritardo + Cancellati + Soppressi) / Corse osservate &times; 100</div>
         <div id="chartDelayIndex" class="chart"></div>
       </div>
     </div>
-    <div class="card collapsible">
+    <div class="card collapsible" data-view="series">
       <div class="card-header">
         <h2>Serie mensile</h2>
         <button class="card-toggle" aria-label="Espandi/Collassa">&#9660;</button>
       </div>
       <div class="card-body">
+        <div class="card-desc">Andamento mensile del numero di corse suddivise per stato: effettuate, in ritardo, cancellate e soppresse.</div>
+        <div class="filter-badges" id="badgesSeries"></div>
         <div id="chartMonthly" class="chart"></div>
       </div>
     </div>
   </section>
 
   <section class="panel grid2">
-    <div class="card collapsible card--collapsed">
+    <div class="card collapsible card--collapsed" data-view="hist">
       <div class="card-header">
         <h2>Distribuzione ritardo arrivo</h2>
         <button class="card-toggle" aria-label="Espandi/Collassa">&#9654;</button>
       </div>
       <div class="card-body">
+        <div class="card-desc">Distribuzione dei treni per fascia di ritardo all'arrivo (minuti). Mostra quanti treni rientrano in ciascun intervallo.</div>
+        <div class="filter-badges" id="badgesHist"></div>
         <div id="chartHist" class="chart"></div>
       </div>
     </div>
-    <div class="card collapsible card--collapsed">
+    <div class="card collapsible card--collapsed" data-view="map">
       <div class="card-header">
         <h2>Mappa stazioni</h2>
         <button class="card-toggle" aria-label="Espandi/Collassa">&#9654;</button>
       </div>
       <div class="card-body">
+        <div class="card-desc">Visualizzazione geografica delle stazioni. I cerchi indicano il valore della metrica selezionata. I filtri stazione partenza/arrivo non si applicano a questa vista.</div>
+        <div class="filter-badges" id="badgesMap"></div>
         <div id="map" class="map"></div>
         <div class="note" id="mapNote"></div>
       </div>
@@ -143,7 +151,7 @@
   </section>
 
   <section class="panel">
-    <div class="card collapsible card--collapsed">
+    <div class="card collapsible card--collapsed" data-view="top10">
       <div class="card-header">
         <h2>Top 10 Capoluoghi pi&ugrave; problematici</h2>
         <div class="card-header-controls">
@@ -159,10 +167,19 @@
         </div>
       </div>
       <div class="card-body">
+        <div class="card-desc">Classifica dei 10 capoluoghi con le peggiori prestazioni di puntualit&agrave;. I filtri stazione partenza/arrivo non si applicano a questa vista.</div>
+        <div class="filter-badges" id="badgesTop10"></div>
         <div id="chartStationsTop10" class="chart chart--tall"></div>
       </div>
     </div>
   </section>
+
+  <footer class="site-footer">
+    Realizzato da <strong>Umberto Bertonelli</strong><br>
+    <a href="https://www.umbertobertonelli.it/" target="_blank" rel="noopener">umbertobertonelli.it</a>
+    &middot;
+    <a href="https://github.com/DrElegantia/trainstats-dashboard-test" target="_blank" rel="noopener">GitHub</a>
+  </footer>
 
   <script src="https://cdn.plot.ly/plotly-basic-2.35.2.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
