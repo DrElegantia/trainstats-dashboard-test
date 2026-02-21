@@ -540,11 +540,7 @@ function initToggleControls() {
     b.onclick = () => {
       state.filters.day_types[i] = !state.filters.day_types[i];
       b.classList.toggle("off", !state.filters.day_types[i]);
-      if (hasDetailFilter()) {
-        const loads = [ensureDetailData()];
-        if (hasStationFilter()) loads.push(ensureStationDetailData());
-        Promise.all(loads).then(renderAll);
-      } else { renderAll(); }
+      ensureDataForCurrentFilters().then(renderAll);
     };
     dayTypeWrap.appendChild(b);
   });
@@ -560,11 +556,7 @@ function initToggleControls() {
     b.onclick = () => {
       state.filters.time_slots[i] = !state.filters.time_slots[i];
       b.classList.toggle("off", !state.filters.time_slots[i]);
-      if (hasDetailFilter()) {
-        const loads = [ensureDetailData()];
-        if (hasStationFilter()) loads.push(ensureStationDetailData());
-        Promise.all(loads).then(renderAll);
-      } else { renderAll(); }
+      ensureDataForCurrentFilters().then(renderAll);
     };
     timeSlotWrap.appendChild(b);
   });
@@ -717,11 +709,7 @@ function initFilters() {
     depSel.value = state.filters.dep || "all";
     depSel.onchange = () => {
       state.filters.dep = depSel.value || "all"; updateDepAliases();
-      if (state.filters.dep !== "all") {
-        const loads = [ensureOdData(), ensureHistStationsData()];
-        if (hasDetailFilter()) loads.push(ensureStationDetailData());
-        Promise.all(loads).then(renderAll);
-      } else { renderAll(); }
+      ensureDataForCurrentFilters().then(renderAll);
     };
   }
 
@@ -731,11 +719,7 @@ function initFilters() {
     arrSel.value = state.filters.arr || "all";
     arrSel.onchange = () => {
       state.filters.arr = arrSel.value || "all"; updateArrAliases();
-      if (state.filters.arr !== "all") {
-        const loads = [ensureOdData(), ensureHistStationsData()];
-        if (hasDetailFilter()) loads.push(ensureStationDetailData());
-        Promise.all(loads).then(renderAll);
-      } else { renderAll(); }
+      ensureDataForCurrentFilters().then(renderAll);
     };
   }
 
@@ -1357,6 +1341,28 @@ async function ensureStationDetailData() {
   ]);
 }
 
+/**
+ * Ensure all datasets needed for the current filter combination are loaded.
+ * Call this before renderAll() whenever filters change.
+ */
+async function ensureDataForCurrentFilters() {
+  const loads = [];
+  const station = hasStationFilter();
+  const detail = hasDetailFilter();
+
+  if (station) {
+    loads.push(ensureOdData());
+    loads.push(ensureHistStationsData());
+  }
+  if (detail) {
+    loads.push(ensureDetailData());
+  }
+  if (station && detail) {
+    loads.push(ensureStationDetailData());
+  }
+  if (loads.length) await Promise.all(loads);
+}
+
 /* ────────────────── collapsible extra filters ────────────────── */
 
 function initFiltersToggle() {
@@ -1389,13 +1395,11 @@ function initCollapsibleCards() {
         const chartEl = card.querySelector(".chart, .map");
         if (!chartEl) return;
         const id = chartEl.id;
-        if (id === "chartDelayIndex" || id === "chartMonthly") renderSeries();
+        if (id === "chartDelayIndex" || id === "chartMonthly") {
+          ensureDataForCurrentFilters().then(renderSeries);
+        }
         else if (id === "chartHist") {
-          if (hasStationFilter()) {
-            const loads = [ensureHistStationsData()];
-            if (hasDetailFilter()) loads.push(ensureStationDetailData());
-            Promise.all(loads).then(renderHist);
-          } else { renderHist(); }
+          ensureDataForCurrentFilters().then(renderHist);
         }
         else if (id === "map") {
           initMap();

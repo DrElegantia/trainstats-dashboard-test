@@ -7,7 +7,143 @@ from typing import Any, Dict, List, Optional, Set
 
 import pandas as pd
 
-from .utils import bucketize_delay, ensure_dir, load_yaml
+from .utils import bucketize_delay, ensure_dir, load_yaml, normalize_station_name
+
+
+_station_code_map_cache: Optional[Dict[str, str]] = None
+
+
+def _build_station_code_map(df: Optional[pd.DataFrame] = None) -> Dict[str, str]:
+    """Build a mapping from every station code to a canonical code.
+
+    When the same physical station has multiple codes (e.g. N_xxx from
+    name-hashing and S0xxxx from official RFI numbering), pick one
+    canonical code per normalized station name so that all gold
+    aggregations treat them as the same station.
+
+    Sources: stations_dim.csv (authoritative, all historical codes) plus
+    any code→name pairs found in the current dataframe.
+
+    Preference: S-codes (official) > N-codes (synthetic hash).
+    """
+    global _station_code_map_cache
+    if _station_code_map_cache is not None:
+        return _station_code_map_cache
+
+    pairs: Dict[str, str] = {}  # code → normalized_name
+
+    # 1. Load from stations_dim.csv (has all historical codes)
+    dim_path = os.path.join("data", "gold", "stations_dim.csv")
+    if os.path.exists(dim_path):
+        try:
+            dim = pd.read_csv(dim_path)
+            for _, row in dim.iterrows():
+                code = str(row.get("cod_stazione", "")).strip()
+                name = str(row.get("nome_stazione", "")).strip()
+                if code and name:
+                    pairs[code] = normalize_station_name(name)
+        except Exception:
+            pass
+
+    # 2. Also collect from current dataframe (catches brand-new codes)
+    if df is not None:
+        for col_code, col_name in [("cod_partenza", "nome_partenza"),
+                                   ("cod_arrivo", "nome_arrivo")]:
+            if col_code not in df.columns or col_name not in df.columns:
+                continue
+            sub = df[[col_code, col_name]].dropna(subset=[col_code])
+            for code, name in zip(sub[col_code].astype(str).str.strip(),
+                                  sub[col_name].astype(str).str.strip()):
+                if code and code not in pairs:
+                    pairs[code] = normalize_station_name(name)
+
+    # Group codes by normalized name
+    name_to_codes: Dict[str, List[str]] = {}
+    for code, norm_name in pairs.items():
+        if not norm_name:
+            continue
+        name_to_codes.setdefault(norm_name, []).append(code)
+
+    # Pick canonical code per group: prefer S-codes (official RFI)
+    code_map: Dict[str, str] = {}
+    for _name, codes in name_to_codes.items():
+        if len(codes) <= 1:
+            continue
+        s_codes = sorted(c for c in codes if c.startswith("S"))
+        canonical = s_codes[0] if s_codes else codes[0]
+        for c in codes:
+            if c != canonical:
+                code_map[c] = canonical
+
+    _station_code_map_cache = code_map
+    return code_map
+
+
+def _apply_code_map(df: pd.DataFrame, code_map: Dict[str, str]) -> pd.DataFrame:
+    """Replace station codes in the dataframe using the canonical mapping."""
+    if not code_map:
+        return df
+    df = df.copy()
+    for col in ("cod_partenza", "cod_arrivo", "cod_stazione"):
+        if col in df.columns:
+            df[col] = df[col].map(lambda c: code_map.get(c, c))
+    return df
+
+
+# Columns that are always summed when re-aggregating after code remapping.
+_SUM_COLS = frozenset([
+    "corse_osservate", "effettuate", "cancellate", "soppresse",
+    "parzialmente_cancellate", "cancellate_tot", "info_mancante",
+    "in_orario", "in_ritardo", "in_anticipo",
+    "oltre_5", "oltre_10", "oltre_15", "oltre_30", "oltre_60",
+    "minuti_ritardo_tot", "minuti_anticipo_tot", "minuti_netti_tot",
+    "count", "minuti_ritardo", "minuti_anticipo",
+])
+
+# Columns that need weighted-average (by corse_osservate) when re-aggregating.
+_WAVG_COLS = frozenset(["ritardo_medio", "ritardo_mediano", "p90", "p95"])
+
+
+def _reaggregate_remapped(df: pd.DataFrame, key_cols: List[str]) -> pd.DataFrame:
+    """Re-aggregate rows that share the same key after station code remapping.
+
+    During the N_→S_ transition period (around Dec 2025), the same station
+    may have rows under both code variants. After remapping both to the
+    canonical S_ code, those rows share a key and must be merged: counts are
+    summed, means/percentiles are weighted-averaged by corse_osservate.
+    """
+    if df.empty or not df.duplicated(subset=key_cols).any():
+        return df
+
+    present_sum = [c for c in _SUM_COLS if c in df.columns]
+    present_wavg = [c for c in _WAVG_COLS if c in df.columns]
+    weight = "corse_osservate"
+    has_weight = weight in df.columns and len(present_wavg) > 0
+
+    agg_spec: Dict[str, Any] = {c: "sum" for c in present_sum}
+    for c in df.columns:
+        if c in key_cols or c in agg_spec or c in _WAVG_COLS:
+            continue
+        agg_spec[c] = "first"
+
+    if has_weight:
+        tmp = df.copy()
+        for wc in present_wavg:
+            wcol = f"__w_{wc}"
+            tmp[wcol] = tmp[wc].fillna(0) * tmp[weight].fillna(0)
+            agg_spec[wcol] = "sum"
+        result = tmp.groupby(key_cols, dropna=False).agg(agg_spec).reset_index()
+        safe_w = result[weight].replace(0, float("nan"))
+        for wc in present_wavg:
+            result[wc] = result[f"__w_{wc}"] / safe_w
+            result.drop(columns=[f"__w_{wc}"], inplace=True)
+    else:
+        for wc in present_wavg:
+            if wc in df.columns:
+                agg_spec[wc] = "mean"
+        result = df.groupby(key_cols, dropna=False).agg(agg_spec).reset_index()
+
+    return result
 
 
 def list_silver_month_files() -> List[str]:
@@ -252,6 +388,12 @@ def _nodo_from_ruolo(ruolo_df: pd.DataFrame, group_cols: List[str]) -> pd.DataFr
 def build_gold(cfg: Dict[str, Any], df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
     out: Dict[str, pd.DataFrame] = {}
 
+    # --- Unify station codes (N_ → S_) before any aggregation ---
+    code_map = _build_station_code_map(df)
+    if code_map:
+        df = _apply_code_map(df, code_map)
+        print(f"  unified {len(code_map)} station code aliases")
+
     # --- KPI tables ---
     out["kpi_mese"] = agg_core(["mese"], df)
     out["kpi_mese_categoria"] = agg_core(["mese", "categoria"], df)
@@ -383,9 +525,11 @@ def save_gold_tables(tables: Dict[str, pd.DataFrame]) -> None:
     ensure_dir(out_dir)
 
     keys = gold_keys()
+    code_map = _build_station_code_map()
 
     for name, df_new in tables.items():
         path = os.path.join(out_dir, f"{name}.csv")
+        k = keys.get(name)
 
         if os.path.exists(path):
             try:
@@ -395,6 +539,12 @@ def save_gold_tables(tables: Dict[str, pd.DataFrame]) -> None:
                     print(f"  WARNING: {name}.csv is corrupted (LFS pointer as CSV header) — discarding stale data")
                     merged = df_new.copy()
                 else:
+                    # Unify station codes in old data before merging
+                    df_old = _apply_code_map(df_old, code_map)
+                    # Re-aggregate old rows whose keys collapsed after remapping
+                    # (e.g. transition month Dec 2025 had both N_ and S_ codes)
+                    if k:
+                        df_old = _reaggregate_remapped(df_old, k)
                     merged = pd.concat([df_old, df_new], ignore_index=True)
             except Exception as e:
                 print(f"  WARNING: could not read {name}.csv ({e}) — starting fresh")
@@ -402,7 +552,6 @@ def save_gold_tables(tables: Dict[str, pd.DataFrame]) -> None:
         else:
             merged = df_new.copy()
 
-        k = keys.get(name)
         if k:
             miss = [c for c in k if c not in merged.columns]
             if miss:
