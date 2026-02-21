@@ -1357,6 +1357,25 @@ async function ensureStationDetailData() {
   ]);
 }
 
+/* ────────────────── collapsible extra filters ────────────────── */
+
+function initFiltersToggle() {
+  const toggle = document.getElementById("filtersToggle");
+  const wrap = document.getElementById("filtersExtraWrap");
+  if (!toggle || !wrap) return;
+
+  // On mobile, start collapsed (CSS sets max-height:0)
+  if (isMobile()) {
+    toggle.classList.add("collapsed");
+    wrap.classList.add("collapsed");
+  }
+
+  toggle.addEventListener("click", function() {
+    const isCollapsed = wrap.classList.toggle("collapsed");
+    toggle.classList.toggle("collapsed", isCollapsed);
+  });
+}
+
 /* ────────────────── collapsible cards ────────────────── */
 
 function initCollapsibleCards() {
@@ -1549,6 +1568,7 @@ async function loadAll() {
 
   initFilters();
   initToggleControls();
+  initFiltersToggle();
 
   const mapCardCollapsed = (function() {
     const mapEl = document.getElementById("map");
