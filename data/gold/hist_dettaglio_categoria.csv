@@ -16151,6 +16151,7 @@ mese,tipo_giorno,fascia_oraria,categoria,bucket_ritardo_arrivo,count,minuti_rita
 2026-02,infrasettimanale,sera,nan,"(1,5]",5,17.0,0.0
 2026-02,infrasettimanale,sera,nan,"(10,15]",1,15.0,0.0
 2026-02,infrasettimanale,sera,nan,"(5,10]",1,9.0,0.0
+2026-02,infrasettimanale,sera,,"(-1,0]",1,0.0,0.0
 2026-02,infrasettimanale,sera,,"(-5,-1]",1,0.0,4.0
 2026-02,infrasettimanale,sera,,"(0,1]",1,1.0,0.0
 2026-02,infrasettimanale,sera,,"(1,5]",3,12.0,0.0
