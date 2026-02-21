@@ -540,8 +540,11 @@ function initToggleControls() {
     b.onclick = () => {
       state.filters.day_types[i] = !state.filters.day_types[i];
       b.classList.toggle("off", !state.filters.day_types[i]);
-      if (hasDetailFilter()) { ensureDetailData().then(renderAll); }
-      else { renderAll(); }
+      if (hasDetailFilter()) {
+        const loads = [ensureDetailData()];
+        if (hasStationFilter()) loads.push(ensureHistStationsDetailData());
+        Promise.all(loads).then(renderAll);
+      } else { renderAll(); }
     };
     dayTypeWrap.appendChild(b);
   });
@@ -557,8 +560,11 @@ function initToggleControls() {
     b.onclick = () => {
       state.filters.time_slots[i] = !state.filters.time_slots[i];
       b.classList.toggle("off", !state.filters.time_slots[i]);
-      if (hasDetailFilter()) { ensureDetailData().then(renderAll); }
-      else { renderAll(); }
+      if (hasDetailFilter()) {
+        const loads = [ensureDetailData()];
+        if (hasStationFilter()) loads.push(ensureHistStationsDetailData());
+        Promise.all(loads).then(renderAll);
+      } else { renderAll(); }
     };
     timeSlotWrap.appendChild(b);
   });
@@ -712,7 +718,9 @@ function initFilters() {
     depSel.onchange = () => {
       state.filters.dep = depSel.value || "all"; updateDepAliases();
       if (state.filters.dep !== "all") {
-        Promise.all([ensureOdData(), ensureHistStationsData()]).then(renderAll);
+        const loads = [ensureOdData(), ensureHistStationsData()];
+        if (hasDetailFilter()) loads.push(ensureHistStationsDetailData());
+        Promise.all(loads).then(renderAll);
       } else { renderAll(); }
     };
   }
@@ -724,7 +732,9 @@ function initFilters() {
     arrSel.onchange = () => {
       state.filters.arr = arrSel.value || "all"; updateArrAliases();
       if (state.filters.arr !== "all") {
-        Promise.all([ensureOdData(), ensureHistStationsData()]).then(renderAll);
+        const loads = [ensureOdData(), ensureHistStationsData()];
+        if (hasDetailFilter()) loads.push(ensureHistStationsDetailData());
+        Promise.all(loads).then(renderAll);
       } else { renderAll(); }
     };
   }
@@ -1304,6 +1314,10 @@ async function ensureHistStationsData() {
   await lazyLoadCSV("hist_stazioni_mese_categoria_ruolo.csv", "histStationsMonthRuolo");
 }
 
+async function ensureHistStationsDetailData() {
+  await lazyLoadCSV("hist_stazioni_dettaglio_categoria_ruolo.csv", "histStationsDetailRuolo");
+}
+
 async function ensureDetailData() {
   await Promise.all([
     lazyLoadCSV("kpi_dettaglio_categoria.csv", "kpiDetailCat"),
@@ -1327,7 +1341,9 @@ function initCollapsibleCards() {
         if (id === "chartDelayIndex" || id === "chartMonthly") renderSeries();
         else if (id === "chartHist") {
           if (hasStationFilter()) {
-            ensureHistStationsData().then(renderHist);
+            const loads = [ensureHistStationsData()];
+            if (hasDetailFilter()) loads.push(ensureHistStationsDetailData());
+            Promise.all(loads).then(renderHist);
           } else { renderHist(); }
         }
         else if (id === "map") {
