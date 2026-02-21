@@ -529,8 +529,8 @@ function initToggleControls() {
   // Already built?
   if (dayTypeWrap.children.length) return;
 
-  const dayLabels = ["I", "W"];
-  const dayTitles = ["Infrasettimanale (Lun\u2013Ven)", "Weekend (Sab\u2013Dom)"];
+  const dayLabels = ["Infrasettimanale", "Fine settimana"];
+  const dayTitles = ["Luned\u00ec\u2013Venerd\u00ec", "Sabato\u2013Domenica"];
   dayLabels.forEach((label, i) => {
     const b = document.createElement("button");
     b.type = "button";
@@ -545,8 +545,8 @@ function initToggleControls() {
     dayTypeWrap.appendChild(b);
   });
 
-  const slotLabels = ["Ma", "TM", "Po", "Se", "No"];
-  const slotTitles = ["Mattina (6\u201308:59)", "Tarda mattina (9\u201313:59)", "Pomeriggio (14\u201317:59)", "Sera (18\u201321:59)", "Notte (22\u201305:59)"];
+  const slotLabels = ["Mattina", "Tarda mattina", "Pomeriggio", "Sera", "Notte"];
+  const slotTitles = ["6:00\u201308:59", "9:00\u201313:59", "14:00\u201317:59", "18:00\u201321:59", "22:00\u201305:59"];
   slotLabels.forEach((label, i) => {
     const b = document.createElement("button");
     b.type = "button";
@@ -1419,7 +1419,91 @@ function initStationsMetricSel() {
   sel.onchange = function() { renderStationsTop10(); };
 }
 
+/* ────────────────── filter badges ────────────────── */
+
+function renderFilterBadges() {
+  var f = state.filters;
+  var badges = [];
+
+  // Year
+  if (f.year !== "all") badges.push({ label: "Anno: " + f.year, type: "active" });
+  // Category
+  if (f.cat !== "all") badges.push({ label: "Cat: " + f.cat, type: "active" });
+  // Month range
+  if (f.month_from || f.month_to) {
+    var rangeLabel = "Mese: " + (f.month_from || "...") + " \u2013 " + (f.month_to || "...");
+    badges.push({ label: rangeLabel, type: "active" });
+  }
+
+  // Station filters (only apply to kpi, series, hist)
+  var depLabel = "";
+  var arrLabel = "";
+  if (f.dep !== "all") {
+    var depSel = document.getElementById("depSel");
+    depLabel = depSel ? depSel.options[depSel.selectedIndex].text : f.dep;
+    badges.push({ label: "Partenza: " + depLabel, type: "active", stationFilter: true });
+  }
+  if (f.arr !== "all") {
+    var arrSel = document.getElementById("arrSel");
+    arrLabel = arrSel ? arrSel.options[arrSel.selectedIndex].text : f.arr;
+    badges.push({ label: "Arrivo: " + arrLabel, type: "active", stationFilter: true });
+  }
+
+  // Day type
+  var dayNames = ["Infrasettimanale", "Fine settimana"];
+  var dtOff = [];
+  f.day_types.forEach(function(on, i) { if (!on) dtOff.push(dayNames[i]); });
+  if (dtOff.length > 0 && dtOff.length < dayNames.length) {
+    var dtOn = [];
+    f.day_types.forEach(function(on, i) { if (on) dtOn.push(dayNames[i]); });
+    badges.push({ label: "Giorno: " + dtOn.join(", "), type: "active" });
+  }
+
+  // Time slots
+  var slotNames = ["Mattina", "Tarda matt.", "Pomeriggio", "Sera", "Notte"];
+  var tsOff = [];
+  f.time_slots.forEach(function(on, i) { if (!on) tsOff.push(slotNames[i]); });
+  if (tsOff.length > 0 && tsOff.length < slotNames.length) {
+    var tsOn = [];
+    f.time_slots.forEach(function(on, i) { if (on) tsOn.push(slotNames[i]); });
+    badges.push({ label: "Fascia: " + tsOn.join(", "), type: "active" });
+  }
+
+  // If no active filters, nothing to show
+  var targets = [
+    { id: "badgesDelayIndex", stationApplies: true },
+    { id: "badgesSeries", stationApplies: true },
+    { id: "badgesHist", stationApplies: true },
+    { id: "badgesMap", stationApplies: false },
+    { id: "badgesTop10", stationApplies: false }
+  ];
+
+  targets.forEach(function(t) {
+    var el = document.getElementById(t.id);
+    if (!el) return;
+    el.innerHTML = "";
+    if (badges.length === 0) return;
+
+    badges.forEach(function(b) {
+      if (b.stationFilter && !t.stationApplies) {
+        // Show as non-applicable
+        var span = document.createElement("span");
+        span.className = "filter-badge filter-badge--na";
+        span.textContent = b.label;
+        span.title = "Questo filtro non si applica a questa vista";
+        el.appendChild(span);
+      } else {
+        var span = document.createElement("span");
+        span.className = "filter-badge filter-badge--active";
+        span.textContent = b.label;
+        el.appendChild(span);
+      }
+    });
+  });
+}
+
 function renderAll() {
+  renderFilterBadges();
   renderKPI();
   renderSeries();
   renderHist();
