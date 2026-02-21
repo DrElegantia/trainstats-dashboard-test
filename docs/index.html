@@ -49,23 +49,28 @@
         <button id="resetBtn"><span class="reset-icon">&#8635;</span> Reset</button>
       </div>
     </div>
-    <div class="filters-divider"></div>
-    <div class="filters-row filters-row--extra" id="filtersExtra">
-      <div class="filter">
-        <label>Mese</label>
-        <div class="month-range">
-          <select id="monthFrom"></select>
-          <span class="month-sep">&ndash;</span>
-          <select id="monthTo"></select>
+    <div class="filters-divider-toggle" id="filtersToggle">
+      <span class="filters-toggle-label">Filtri avanzati</span>
+      <span class="filters-toggle-arrow">&#9660;</span>
+    </div>
+    <div class="filters-extra-wrap" id="filtersExtraWrap">
+      <div class="filters-row filters-row--extra" id="filtersExtra">
+        <div class="filter">
+          <label>Mese</label>
+          <div class="month-range">
+            <select id="monthFrom"></select>
+            <span class="month-sep">&ndash;</span>
+            <select id="monthTo"></select>
+          </div>
         </div>
-      </div>
-      <div class="filter">
-        <label>Tipo giornata <span class="info-tip" data-tooltip="Infrasettimanale = Lun&ndash;Ven&#10;Weekend = Sab&ndash;Dom">&#9432;</span></label>
-        <div id="dayTypeWrap" class="toggle-group"></div>
-      </div>
-      <div class="filter">
-        <label>Fascia oraria <span class="info-tip" data-tooltip="Mattina = 6:00&ndash;8:59&#10;Tarda mattina = 9:00&ndash;13:59&#10;Pomeriggio = 14:00&ndash;17:59&#10;Sera = 18:00&ndash;21:59&#10;Notte = 22:00&ndash;5:59">&#9432;</span></label>
-        <div id="timeSlotWrap" class="toggle-group"></div>
+        <div class="filter">
+          <label>Tipo giornata <span class="info-tip" data-tooltip="Infrasettimanale = Lun&ndash;Ven&#10;Weekend = Sab&ndash;Dom">&#9432;</span></label>
+          <div id="dayTypeWrap" class="toggle-group"></div>
+        </div>
+        <div class="filter">
+          <label>Fascia oraria <span class="info-tip" data-tooltip="Mattina = 6:00&ndash;8:59&#10;Tarda mattina = 9:00&ndash;13:59&#10;Pomeriggio = 14:00&ndash;17:59&#10;Sera = 18:00&ndash;21:59&#10;Notte = 22:00&ndash;5:59">&#9432;</span></label>
+          <div id="timeSlotWrap" class="toggle-group"></div>
+        </div>
       </div>
     </div>
   </section>
