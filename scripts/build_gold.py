@@ -273,15 +273,23 @@ def build_metrics(cfg: Dict[str, Any], df: pd.DataFrame) -> pd.DataFrame:
     df["has_delay_arrivo"] = df["ritardo_arrivo_min"].notna()
     df["has_delay_partenza"] = df["ritardo_partenza_min"].notna()
 
-    df["arrivo_in_orario"] = df["has_delay_arrivo"] & (df["ritardo_arrivo_min"] <= thr) & (df["ritardo_arrivo_min"] >= 0)
-    df["arrivo_in_ritardo"] = df["has_delay_arrivo"] & (df["ritardo_arrivo_min"] > thr)
-    df["arrivo_in_anticipo"] = df["has_delay_arrivo"] & (df["ritardo_arrivo_min"] < 0)
+    df["arrivo_in_orario"] = (df["has_delay_arrivo"] & (df["ritardo_arrivo_min"] <= thr) & (df["ritardo_arrivo_min"] >= 0)).astype("int8")
+    df["arrivo_in_ritardo"] = (df["has_delay_arrivo"] & (df["ritardo_arrivo_min"] > thr)).astype("int8")
+    df["arrivo_in_anticipo"] = (df["has_delay_arrivo"] & (df["ritardo_arrivo_min"] < 0)).astype("int8")
 
-    df["oltre_5"] = df["has_delay_arrivo"] & (df["ritardo_arrivo_min"] >= 5)
-    df["oltre_10"] = df["has_delay_arrivo"] & (df["ritardo_arrivo_min"] >= 10)
-    df["oltre_15"] = df["has_delay_arrivo"] & (df["ritardo_arrivo_min"] >= 15)
-    df["oltre_30"] = df["has_delay_arrivo"] & (df["ritardo_arrivo_min"] >= 30)
-    df["oltre_60"] = df["has_delay_arrivo"] & (df["ritardo_arrivo_min"] >= 60)
+    df["oltre_5"] = (df["has_delay_arrivo"] & (df["ritardo_arrivo_min"] >= 5)).astype("int8")
+    df["oltre_10"] = (df["has_delay_arrivo"] & (df["ritardo_arrivo_min"] >= 10)).astype("int8")
+    df["oltre_15"] = (df["has_delay_arrivo"] & (df["ritardo_arrivo_min"] >= 15)).astype("int8")
+    df["oltre_30"] = (df["has_delay_arrivo"] & (df["ritardo_arrivo_min"] >= 30)).astype("int8")
+    df["oltre_60"] = (df["has_delay_arrivo"] & (df["ritardo_arrivo_min"] >= 60)).astype("int8")
+
+    # Pre-compute stato_corsa flags as int for fast native aggregation
+    stato = df["stato_corsa"].astype(str).str.strip()
+    df["is_effettuato"] = (stato == "effettuato").astype("int8")
+    df["is_cancellato"] = (stato == "cancellato").astype("int8")
+    df["is_soppresso"] = (stato == "soppresso").astype("int8")
+    df["is_parz_cancellato"] = (stato == "parzialmente_cancellato").astype("int8")
+    df["info_mancante_int"] = df["info_mancante"].fillna(False).astype(bool).astype("int8")
 
     df["minuti_ritardo"] = df["ritardo_arrivo_min"].clip(lower=0)
     df["minuti_anticipo"] = (-df["ritardo_arrivo_min"]).clip(lower=0)
@@ -304,43 +312,34 @@ def build_metrics(cfg: Dict[str, Any], df: pd.DataFrame) -> pd.DataFrame:
 
 
 def agg_core(group_cols: List[str], df: pd.DataFrame) -> pd.DataFrame:
-    def q90(x: pd.Series) -> float:
-        x = x.dropna()
-        if len(x) == 0:
-            return float("nan")
-        return float(x.quantile(0.9))
-
-    def q95(x: pd.Series) -> float:
-        x = x.dropna()
-        if len(x) == 0:
-            return float("nan")
-        return float(x.quantile(0.95))
-
     g = df.groupby(group_cols, dropna=False)
 
     out = g.agg(
         corse_osservate=("_obs_id", "count"),
-        effettuate=("stato_corsa", lambda s: int((pd.Series(s) == "effettuato").sum())),
-        cancellate=("stato_corsa", lambda s: int((pd.Series(s) == "cancellato").sum())),
-        soppresse=("stato_corsa", lambda s: int((pd.Series(s) == "soppresso").sum())),
-        parzialmente_cancellate=("stato_corsa", lambda s: int((pd.Series(s) == "parzialmente_cancellato").sum())),
-        info_mancante=("info_mancante", lambda s: int(pd.Series(s).fillna(False).astype(bool).sum())),
-        in_orario=("arrivo_in_orario", lambda s: int(pd.Series(s).fillna(False).astype(bool).sum())),
-        in_ritardo=("arrivo_in_ritardo", lambda s: int(pd.Series(s).fillna(False).astype(bool).sum())),
-        in_anticipo=("arrivo_in_anticipo", lambda s: int(pd.Series(s).fillna(False).astype(bool).sum())),
-        oltre_5=("oltre_5", lambda s: int(pd.Series(s).fillna(False).astype(bool).sum())),
-        oltre_10=("oltre_10", lambda s: int(pd.Series(s).fillna(False).astype(bool).sum())),
-        oltre_15=("oltre_15", lambda s: int(pd.Series(s).fillna(False).astype(bool).sum())),
-        oltre_30=("oltre_30", lambda s: int(pd.Series(s).fillna(False).astype(bool).sum())),
-        oltre_60=("oltre_60", lambda s: int(pd.Series(s).fillna(False).astype(bool).sum())),
+        effettuate=("is_effettuato", "sum"),
+        cancellate=("is_cancellato", "sum"),
+        soppresse=("is_soppresso", "sum"),
+        parzialmente_cancellate=("is_parz_cancellato", "sum"),
+        info_mancante=("info_mancante_int", "sum"),
+        in_orario=("arrivo_in_orario", "sum"),
+        in_ritardo=("arrivo_in_ritardo", "sum"),
+        in_anticipo=("arrivo_in_anticipo", "sum"),
+        oltre_5=("oltre_5", "sum"),
+        oltre_10=("oltre_10", "sum"),
+        oltre_15=("oltre_15", "sum"),
+        oltre_30=("oltre_30", "sum"),
+        oltre_60=("oltre_60", "sum"),
         minuti_ritardo_tot=("minuti_ritardo", "sum"),
         minuti_anticipo_tot=("minuti_anticipo", "sum"),
         minuti_netti_tot=("minuti_netti", "sum"),
         ritardo_medio=("ritardo_arrivo_min", "mean"),
         ritardo_mediano=("ritardo_arrivo_min", "median"),
-        p90=("ritardo_arrivo_min", q90),
-        p95=("ritardo_arrivo_min", q95),
     ).reset_index()
+
+    # Compute quantiles via native groupby().quantile() — much faster than lambdas
+    delay_g = df.groupby(group_cols, dropna=False)["ritardo_arrivo_min"]
+    out["p90"] = delay_g.quantile(0.9).values
+    out["p95"] = delay_g.quantile(0.95).values
 
     out["cancellate_tot"] = out["cancellate"].fillna(0).astype(int) + out["parzialmente_cancellate"].fillna(0).astype(int)
 
@@ -574,19 +573,44 @@ def _month_keys_between(d0: date, d1: date) -> List[str]:
     return sorted(out)
 
 
-def main(months: Optional[List[str]] = None) -> None:
+def main(months: Optional[List[str]] = None, chunk_size: int = 3) -> None:
     cfg = load_yaml("config/pipeline.yml")
 
-    df = load_silver(months)
-    if df.empty:
+    if months is None:
+        months = sorted(
+            p.rsplit("/", 1)[-1].replace(".parquet", "")
+            for p in list_silver_month_files()
+        )
+
+    if not months:
         print("no silver found, will not build gold")
         return
 
-    dfm = build_metrics(cfg, df)
-    tables = build_gold(cfg, dfm)
-    save_gold_tables(tables)
+    # Process months in chunks to limit memory usage and avoid timeouts.
+    # Each chunk's gold tables are merged with existing gold via save_gold_tables.
+    all_table_names: Set[str] = set()
+    for i in range(0, len(months), chunk_size):
+        chunk = months[i : i + chunk_size]
+        print(f"  processing chunk {i // chunk_size + 1}: months {chunk}")
 
-    print({"gold_tables": sorted(list(tables.keys())), "months_used": months or "ALL"})
+        # Reset code_map cache so it picks up any new data written by previous chunks
+        global _station_code_map_cache
+        _station_code_map_cache = None
+
+        df = load_silver(chunk)
+        if df.empty:
+            print(f"  no silver for {chunk}, skipping")
+            continue
+
+        dfm = build_metrics(cfg, df)
+        tables = build_gold(cfg, dfm)
+        save_gold_tables(tables)
+        all_table_names.update(tables.keys())
+
+        # Free memory
+        del df, dfm, tables
+
+    print({"gold_tables": sorted(all_table_names), "months_used": months})
 
 
 if __name__ == "__main__":
@@ -596,6 +620,7 @@ if __name__ == "__main__":
     ap.add_argument("--months", nargs="*", required=False, help="YYYYMM list. If omitted, rebuilds all history.")
     ap.add_argument("--start", required=False, help="YYYY-MM-DD (optional shortcut to derive months)")
     ap.add_argument("--end", required=False, help="YYYY-MM-DD (optional shortcut to derive months)")
+    ap.add_argument("--chunk-size", type=int, default=3, help="Months per processing chunk (default: 3)")
     args = ap.parse_args()
 
     months_arg: Optional[List[str]] = args.months if args.months else None
@@ -604,4 +629,4 @@ if __name__ == "__main__":
         d1 = date.fromisoformat(args.end) if args.end else d0
         months_arg = _month_keys_between(d0, d1)
 
-    main(months_arg)
+    main(months_arg, chunk_size=args.chunk_size)
