@@ -19,6 +19,59 @@ body {
   color: var(--text);
 }
 
+/* --- Fade-in on load --- */
+body { opacity: 0; transition: opacity 0.4s ease; }
+body.loaded { opacity: 1; }
+
+/* --- Loading spinner --- */
+.loading-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  z-index: 50000;
+  transition: opacity 0.4s ease;
+  gap: 16px;
+}
+.loading-overlay.hidden { opacity: 0; pointer-events: none; }
+
+.loading-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid rgba(122,162,255,0.15);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.loading-text {
+  font-size: 13px;
+  color: var(--muted);
+  letter-spacing: 0.5px;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* --- Section stagger animation --- */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+body.loaded .panel,
+body.loaded .site-footer {
+  animation: fadeUp 0.5s ease both;
+}
+body.loaded .panel:nth-child(1) { animation-delay: 0.05s; }
+body.loaded .panel:nth-child(2) { animation-delay: 0.12s; }
+body.loaded .panel:nth-child(3) { animation-delay: 0.19s; }
+body.loaded .panel:nth-child(4) { animation-delay: 0.26s; }
+body.loaded .panel:nth-child(5) { animation-delay: 0.33s; }
+body.loaded .site-footer { animation-delay: 0.4s; }
+
+/* --- Top bar --- */
 .topbar {
   display: flex;
   justify-content: space-between;
@@ -250,11 +303,12 @@ button:hover {
   background: rgba(15, 23, 48, 0.7);
   border: 1px solid var(--border);
   border-radius: 12px;
-  transition: border-color 0.2s;
+  transition: border-color 0.3s, box-shadow 0.3s;
 }
 
 .kpi:hover {
-  border-color: rgba(122, 162, 255, 0.2);
+  border-color: rgba(122, 162, 255, 0.25);
+  box-shadow: 0 0 20px rgba(122,162,255,0.06);
 }
 
 .kpiLabel {
@@ -284,11 +338,12 @@ button:hover {
   background: rgba(15, 23, 48, 0.72);
   border: 1px solid var(--border);
   border-radius: 12px;
-  transition: border-color 0.2s;
+  transition: border-color 0.3s, box-shadow 0.3s;
 }
 
 .card:hover {
   border-color: rgba(255,255,255,0.12);
+  box-shadow: 0 0 24px rgba(122,162,255,0.04);
 }
 
 .card h2 {
@@ -561,6 +616,71 @@ button:hover {
 }
 
 .site-footer a:hover {
+  opacity: 1;
+  text-decoration: underline;
+}
+
+/* ====================================================
+   EMBED MODE  — activated via ?embed=1 query param
+   Compact layout for iframe embedding on external sites.
+   ==================================================== */
+body.embed-mode {
+  background: var(--bg);
+}
+
+body.embed-mode .topbar {
+  padding: 10px 12px 8px;
+}
+
+body.embed-mode .title h1 {
+  font-size: 18px;
+}
+
+body.embed-mode .subtitle {
+  font-size: 11px;
+}
+
+body.embed-mode .panel {
+  margin: 8px;
+  padding: 10px;
+  border-radius: 10px;
+}
+
+body.embed-mode .kpi {
+  padding: 10px 12px;
+}
+
+body.embed-mode .kpiValue {
+  font-size: 18px;
+}
+
+body.embed-mode .card {
+  padding: 10px 12px;
+}
+
+body.embed-mode .site-footer {
+  padding: 12px 10px 16px;
+  font-size: 11px;
+}
+
+/* In embed mode hide the "open in new tab" link */
+body.embed-mode .embed-hide {
+  display: none;
+}
+
+/* "Open full dashboard" link shown only in embed mode */
+.embed-open-link {
+  display: none;
+}
+body.embed-mode .embed-open-link {
+  display: inline-block;
+  font-size: 11px;
+  color: var(--accent);
+  text-decoration: none;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+body.embed-mode .embed-open-link:hover {
   opacity: 1;
   text-decoration: underline;
 }

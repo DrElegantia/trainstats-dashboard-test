@@ -8,12 +8,20 @@
   <link rel="stylesheet" href="assets/style.css" />
 </head>
 <body>
+  <div class="loading-overlay" id="loadingOverlay">
+    <div class="loading-spinner"></div>
+    <div class="loading-text">Caricamento dati...</div>
+  </div>
+
   <header class="topbar">
     <div class="title">
       <h1>TrainStats Dashboard</h1>
       <div class="subtitle">Dashboard statica su GitHub Pages, aggiornata giornalmente</div>
     </div>
-    <div class="meta" id="metaBox"></div>
+    <div style="text-align:right">
+      <div class="meta" id="metaBox"></div>
+      <a class="embed-open-link" href="https://drelegantia.github.io/trainstats-dashboard-test/" target="_blank" rel="noopener">Apri dashboard completa &#8599;</a>
+    </div>
   </header>
 
   <section class="panel filters-panel">

@@ -1,3 +1,10 @@
+// Detect embed mode from query param ?embed=1
+(function() {
+  if (new URLSearchParams(window.location.search).get("embed") === "1") {
+    document.body.classList.add("embed-mode");
+  }
+})();
+
 window.addEventListener("error", (e) => {
   try {
     const el = document.getElementById("metaBox");
@@ -1694,9 +1701,20 @@ async function loadAll() {
 
   if (!haveAny) setMeta("Errore: non trovo dati validi");
   else setMeta(built ? "Aggiornamento: " + built : "");
+
+  // Dismiss loading overlay and reveal content
+  document.body.classList.add("loaded");
+  var overlay = document.getElementById("loadingOverlay");
+  if (overlay) {
+    overlay.classList.add("hidden");
+    setTimeout(function() { overlay.remove(); }, 500);
+  }
 }
 
 loadAll().catch((err) => {
   console.error(err);
   setMeta("Errore caricamento dati: " + (err && err.message ? err.message : String(err)));
+  document.body.classList.add("loaded");
+  var overlay = document.getElementById("loadingOverlay");
+  if (overlay) { overlay.classList.add("hidden"); setTimeout(function() { overlay.remove(); }, 500); }
 });
