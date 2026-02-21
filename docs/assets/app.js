@@ -542,7 +542,7 @@ function initToggleControls() {
       b.classList.toggle("off", !state.filters.day_types[i]);
       if (hasDetailFilter()) {
         const loads = [ensureDetailData()];
-        if (hasStationFilter()) loads.push(ensureHistStationsDetailData());
+        if (hasStationFilter()) loads.push(ensureStationDetailData());
         Promise.all(loads).then(renderAll);
       } else { renderAll(); }
     };
@@ -562,7 +562,7 @@ function initToggleControls() {
       b.classList.toggle("off", !state.filters.time_slots[i]);
       if (hasDetailFilter()) {
         const loads = [ensureDetailData()];
-        if (hasStationFilter()) loads.push(ensureHistStationsDetailData());
+        if (hasStationFilter()) loads.push(ensureStationDetailData());
         Promise.all(loads).then(renderAll);
       } else { renderAll(); }
     };
@@ -719,7 +719,7 @@ function initFilters() {
       state.filters.dep = depSel.value || "all"; updateDepAliases();
       if (state.filters.dep !== "all") {
         const loads = [ensureOdData(), ensureHistStationsData()];
-        if (hasDetailFilter()) loads.push(ensureHistStationsDetailData());
+        if (hasDetailFilter()) loads.push(ensureStationDetailData());
         Promise.all(loads).then(renderAll);
       } else { renderAll(); }
     };
@@ -733,7 +733,7 @@ function initFilters() {
       state.filters.arr = arrSel.value || "all"; updateArrAliases();
       if (state.filters.arr !== "all") {
         const loads = [ensureOdData(), ensureHistStationsData()];
-        if (hasDetailFilter()) loads.push(ensureHistStationsDetailData());
+        if (hasDetailFilter()) loads.push(ensureStationDetailData());
         Promise.all(loads).then(renderAll);
       } else { renderAll(); }
     };
@@ -919,12 +919,17 @@ function applyDetailDimFilter(rows) {
 
 function renderKPI() {
   const stationFiltered = hasStationFilter();
-  const useDetail = useDetailAggregation();
+  let useDetail = useDetailAggregation();
   let base;
 
   if (stationFiltered) {
     const haveOdDet = state.data.odDetailCat && state.data.odDetailCat.length > 0;
-    base = (useDetail && haveOdDet) ? state.data.odDetailCat : state.data.odMonthCat;
+    if (useDetail && haveOdDet) {
+      base = state.data.odDetailCat;
+    } else {
+      base = state.data.odMonthCat;
+      if (!haveOdDet) useDetail = false;
+    }
   } else {
     base = useDetail ? state.data.kpiDetailCat : state.data.kpiMonthCat;
   }
@@ -975,12 +980,17 @@ function aggregateByMonth(rows) {
 
 function getFilteredSeriesRows() {
   const stationFiltered = hasStationFilter();
-  const useDetail = useDetailAggregation();
+  let useDetail = useDetailAggregation();
   let rows;
 
   if (stationFiltered) {
     const haveOdDet = state.data.odDetailCat && state.data.odDetailCat.length > 0;
-    rows = (useDetail && haveOdDet) ? state.data.odDetailCat : state.data.odMonthCat;
+    if (useDetail && haveOdDet) {
+      rows = state.data.odDetailCat;
+    } else {
+      rows = state.data.odMonthCat;
+      if (!haveOdDet) useDetail = false;
+    }
   } else {
     rows = useDetail
       ? (state.data.kpiDetailCat || [])
@@ -1059,15 +1069,25 @@ function renderHist() {
   const showPct = !!(toggle && toggle.checked);
 
   const stationFiltered = hasStationFilter();
-  const useDetail = useDetailAggregation();
+  let useDetail = useDetailAggregation();
   let base;
 
   if (stationFiltered) {
     const haveStDet = state.data.histStationsDetailRuolo && state.data.histStationsDetailRuolo.length > 0;
-    base = (useDetail && haveStDet) ? state.data.histStationsDetailRuolo : state.data.histStationsMonthRuolo;
+    if (useDetail && haveStDet) {
+      base = state.data.histStationsDetailRuolo;
+    } else {
+      base = state.data.histStationsMonthRuolo;
+      if (!haveStDet) useDetail = false;
+    }
   } else {
     const haveDetHist = state.data.histDetailCat && state.data.histDetailCat.length > 0;
-    base = (useDetail && haveDetHist) ? state.data.histDetailCat : state.data.histMonthCat;
+    if (useDetail && haveDetHist) {
+      base = state.data.histDetailCat;
+    } else {
+      base = state.data.histMonthCat;
+      if (!haveDetHist) useDetail = false;
+    }
   }
 
   let rows = base || [];
@@ -1310,6 +1330,10 @@ async function ensureOdData() {
   await lazyLoadCSV("od_mese_categoria.csv", "odMonthCat");
 }
 
+async function ensureOdDetailData() {
+  await lazyLoadCSV("od_dettaglio_categoria.csv", "odDetailCat");
+}
+
 async function ensureHistStationsData() {
   await lazyLoadCSV("hist_stazioni_mese_categoria_ruolo.csv", "histStationsMonthRuolo");
 }
@@ -1322,6 +1346,14 @@ async function ensureDetailData() {
   await Promise.all([
     lazyLoadCSV("kpi_dettaglio_categoria.csv", "kpiDetailCat"),
     lazyLoadCSV("hist_dettaglio_categoria.csv", "histDetailCat")
+  ]);
+}
+
+/* Load all station-specific detail datasets needed when combining station + detail filters */
+async function ensureStationDetailData() {
+  await Promise.all([
+    ensureOdDetailData(),
+    ensureHistStationsDetailData()
   ]);
 }
 
@@ -1342,7 +1374,7 @@ function initCollapsibleCards() {
         else if (id === "chartHist") {
           if (hasStationFilter()) {
             const loads = [ensureHistStationsData()];
-            if (hasDetailFilter()) loads.push(ensureHistStationsDetailData());
+            if (hasDetailFilter()) loads.push(ensureStationDetailData());
             Promise.all(loads).then(renderHist);
           } else { renderHist(); }
         }
