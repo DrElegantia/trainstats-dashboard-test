@@ -126,7 +126,6 @@ body {
 }
 
 .filters-extra-wrap {
-  overflow: hidden;
   max-height: 200px;
   transition: max-height 0.35s ease, opacity 0.25s ease;
   opacity: 1;
@@ -135,6 +134,7 @@ body {
 .filters-extra-wrap.collapsed {
   max-height: 0;
   opacity: 0;
+  overflow: hidden;
 }
 
 /* --- Filter labels --- */
@@ -467,7 +467,19 @@ button:hover {
   background: rgba(255,255,255,0.06);
 }
 
-/* filtersExtra grid now handled by .filters-row--extra */
+/* Tooltip inside extra filters: render downward to avoid clipping during collapse transitions */
+.filters-extra-wrap .info-tip[data-tooltip]:hover::after,
+.filters-extra-wrap .info-tip.tip-active[data-tooltip]::after {
+  bottom: auto;
+  top: 130%;
+}
+.filters-extra-wrap .info-tip[data-tooltip]:hover::before,
+.filters-extra-wrap .info-tip.tip-active[data-tooltip]::before {
+  bottom: auto;
+  top: 110%;
+  border-top-color: transparent;
+  border-bottom-color: var(--accent);
+}
 
 @media (max-width: 980px) {
   .filters-row--primary { grid-template-columns: 1fr 1fr; }
@@ -504,10 +516,6 @@ button:hover {
   .info-tip.tip-active[data-tooltip]::after { max-width: 200px; min-width: 120px; font-size: 10px; left: 0; transform: none; }
   .toggle-pill { min-width: 28px; height: 26px; font-size: 10px; padding: 0 7px; border-radius: 6px; }
   .filters-toggle-label { font-size: 9px; }
-
-  /* On mobile, start with extra filters collapsed */
-  .filters-extra-wrap { max-height: 0; opacity: 0; }
-  .filters-divider-toggle .filters-toggle-arrow { transform: rotate(-90deg); }
 }
 
 @media (max-width: 380px) {
