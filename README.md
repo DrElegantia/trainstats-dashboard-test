@@ -92,4 +92,4 @@ I dati provengono da [TrainStats](https://trainstats.altervista.org/). Questo pr
 
 ## Licenza
 
-Questo progetto è rilasciato senza alcuna restrizione di copyright. Chiunque può copiare, modificare, distribuire e utilizzare il codice e i dati derivati per qualsiasi scopo, senza necessità di autorizzazione o attribuzione.
+Questo progetto è rilasciato con la massima libertà d’uso. Chiunque può copiare, modificare, distribuire e utilizzare il codice e i dati derivati per qualsiasi scopo, senza necessità di autorizzazione preventiva, a condizione che venga sempre riconosciuta l’attribuzione agli autori originari e al progetto.
