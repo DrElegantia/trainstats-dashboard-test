@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="assets/style.css" />
 </head>
-<body>
+<body class="embed-mode">
   <div class="loading-overlay" id="loadingOverlay">
     <div class="loading-spinner"></div>
     <div class="loading-text">Caricamento dati...</div>
@@ -16,9 +16,8 @@
   <header class="topbar">
     <div class="title">
       <h1>TrainStats Dashboard</h1>
-      <div class="subtitle">Dashboard statica su GitHub Pages, aggiornata giornalmente</div>
     </div>
-    <div class="meta" id="metaBox"></div>
+    <a class="embed-fullscreen-link" href="https://drelegantia.github.io/trainstats-dashboard-test/" target="_blank" rel="noopener">Apri completa &#8599;</a>
   </header>
 
   <section class="panel filters-panel">
@@ -39,26 +38,15 @@
         <label for="arrSel">Stazione arrivo</label>
         <select id="arrSel"></select>
       </div>
-      <div class="filter">
-        <label for="mapMetricSel">Metrica</label>
-        <select id="mapMetricSel">
-          <option value="pct_ritardo">Percentuale in ritardo</option>
-          <option value="in_ritardo">Conteggio in ritardo</option>
-          <option value="corse_osservate">Conteggio corse</option>
-          <option value="minuti_ritardo_tot">Minuti totali ritardo</option>
-          <option value="cancellate">Cancellati</option>
-          <option value="soppresse">Soppressi</option>
-        </select>
-      </div>
       <div class="filter filter--action">
         <button id="resetBtn"><span class="reset-icon">&#8635;</span> Reset</button>
       </div>
     </div>
-    <div class="filters-divider-toggle" id="filtersToggle">
+    <div class="filters-divider-toggle collapsed" id="filtersToggle">
       <span class="filters-toggle-label">Filtri avanzati</span>
       <span class="filters-toggle-arrow">&#9660;</span>
     </div>
-    <div class="filters-extra-wrap" id="filtersExtraWrap">
+    <div class="filters-extra-wrap collapsed" id="filtersExtraWrap">
       <div class="filters-row filters-row--extra" id="filtersExtra">
         <div class="filter filter--month">
           <label>Intervallo mese</label>
@@ -78,6 +66,16 @@
         </div>
       </div>
     </div>
+
+    <!-- Metrica mappa nascosta ma presente per app.js -->
+    <select id="mapMetricSel" style="display:none">
+      <option value="pct_ritardo">Percentuale in ritardo</option>
+      <option value="in_ritardo">Conteggio in ritardo</option>
+      <option value="corse_osservate">Conteggio corse</option>
+      <option value="minuti_ritardo_tot">Minuti totali ritardo</option>
+      <option value="cancellate">Cancellati</option>
+      <option value="soppresse">Soppressi</option>
+    </select>
   </section>
 
   <section class="panel kpis" data-view="kpi">
@@ -90,7 +88,7 @@
       <div class="kpiValue" id="kpiLate"></div>
     </div>
     <div class="kpi">
-      <div class="kpiLabel">Minuti totali di ritardo</div>
+      <div class="kpiLabel">Minuti ritardo</div>
       <div class="kpiValue" id="kpiLateMin"></div>
     </div>
     <div class="kpi">
@@ -110,9 +108,8 @@
         <button class="card-toggle" aria-label="Espandi/Collassa">&#9660;</button>
       </div>
       <div class="card-body">
-        <div class="card-desc">Percentuale mensile di treni in ritardo, cancellati o soppressi sul totale delle corse osservate.</div>
+        <div class="card-desc">Percentuale mensile di treni in ritardo, cancellati o soppressi sul totale.</div>
         <div class="filter-badges" id="badgesDelayIndex"></div>
-        <div class="note">(In ritardo + Cancellati + Soppressi) / Corse osservate &times; 100</div>
         <div id="chartDelayIndex" class="chart"></div>
       </div>
     </div>
@@ -122,7 +119,7 @@
         <button class="card-toggle" aria-label="Espandi/Collassa">&#9660;</button>
       </div>
       <div class="card-body">
-        <div class="card-desc">Andamento mensile del numero di corse suddivise per stato: effettuate, in ritardo, cancellate e soppresse.</div>
+        <div class="card-desc">Andamento mensile delle corse per stato.</div>
         <div class="filter-badges" id="badgesSeries"></div>
         <div id="chartMonthly" class="chart"></div>
       </div>
@@ -132,55 +129,42 @@
   <section class="panel grid2">
     <div class="card collapsible card--collapsed" data-view="hist">
       <div class="card-header">
-        <h2>Distribuzione ritardo arrivo</h2>
+        <h2>Distribuzione ritardo</h2>
         <button class="card-toggle" aria-label="Espandi/Collassa">&#9654;</button>
       </div>
       <div class="card-body">
-        <div class="card-desc">Distribuzione dei treni per fascia di ritardo all'arrivo (minuti). Mostra quanti treni rientrano in ciascun intervallo.</div>
         <div class="filter-badges" id="badgesHist"></div>
         <div id="chartHist" class="chart"></div>
       </div>
     </div>
-    <div class="card collapsible card--collapsed" data-view="map">
-      <div class="card-header">
-        <h2>Mappa stazioni</h2>
-        <button class="card-toggle" aria-label="Espandi/Collassa">&#9654;</button>
-      </div>
-      <div class="card-body">
-        <div class="card-desc">Visualizzazione geografica delle stazioni. I cerchi indicano il valore della metrica selezionata. I filtri stazione partenza/arrivo non si applicano a questa vista.</div>
-        <div class="filter-badges" id="badgesMap"></div>
-        <div id="map" class="map"></div>
-        <div class="note" id="mapNote"></div>
-      </div>
-    </div>
-  </section>
-
-  <section class="panel">
     <div class="card collapsible card--collapsed" data-view="top10">
       <div class="card-header">
-        <h2>Top 10 Capoluoghi pi&ugrave; problematici</h2>
+        <h2>Top 10 Capoluoghi</h2>
         <div class="card-header-controls">
           <select id="stationsMetricSel" class="card-select">
             <option value="pct_ritardo">% in ritardo</option>
-            <option value="in_ritardo">Conteggio in ritardo</option>
-            <option value="minuti_ritardo_tot">Minuti ritardo</option>
+            <option value="in_ritardo">In ritardo</option>
+            <option value="minuti_ritardo_tot">Min. ritardo</option>
             <option value="cancellate_tot">Cancellati</option>
             <option value="soppresse">Soppressi</option>
-            <option value="corse_osservate">Corse osservate</option>
+            <option value="corse_osservate">Corse</option>
           </select>
           <button class="card-toggle" aria-label="Espandi/Collassa">&#9654;</button>
         </div>
       </div>
       <div class="card-body">
-        <div class="card-desc">Classifica dei 10 capoluoghi con le peggiori prestazioni di puntualit&agrave;. I filtri stazione partenza/arrivo non si applicano a questa vista.</div>
         <div class="filter-badges" id="badgesTop10"></div>
         <div id="chartStationsTop10" class="chart chart--tall"></div>
       </div>
     </div>
   </section>
 
-  <footer class="site-footer">
-    Realizzato da <strong>Umberto Bertonelli</strong><br>
+  <!-- Map and mapNote hidden but present for app.js compatibility -->
+  <div id="map" style="display:none"></div>
+  <div id="mapNote" style="display:none"></div>
+  <div id="badgesMap" style="display:none"></div>
+
+  <footer class="site-footer" style="opacity:0.4; padding: 8px 10px 12px;">
     <a href="https://www.umbertobertonelli.it/" target="_blank" rel="noopener">umbertobertonelli.it</a>
     &middot;
     <a href="https://github.com/DrElegantia/trainstats-dashboard-test" target="_blank" rel="noopener">GitHub</a>
