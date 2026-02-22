@@ -2,7 +2,7 @@
 
 Dashboard interattiva per visualizzare statistiche sulla puntualità e il servizio ferroviario in Italia, basata sui dati pubblicati da [TrainStats](https://trainstats.altervista.org/).
 
-Ogni giorno una GitHub Action scarica il CSV giornaliero, lo trasforma attraverso una pipeline bronze/silver/gold e pubblica una dashboard statica su GitHub Pages.
+Ogni giorno una GitHub Action scarica il CSV giornaliero, lo trasforma attraverso una pipeline bronze/silver/gold e pubblica una dashboard statica fruibile qui [Dashboard Treni](https://www.umbertobertonelli.it/ritardo-treni/)
 
 ## Architettura dati
 
