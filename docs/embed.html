@@ -173,5 +173,22 @@
   <script src="https://cdn.plot.ly/plotly-basic-2.35.2.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="assets/app.js"></script>
+  <script>
+  /* ── Notify parent frame of content height for seamless embedding ── */
+  (function () {
+    function notifyHeight() {
+      if (window.parent === window) return;
+      window.parent.postMessage(
+        { type: 'resize', height: document.documentElement.scrollHeight },
+        '*'
+      );
+    }
+    if (typeof ResizeObserver !== 'undefined') {
+      new ResizeObserver(notifyHeight).observe(document.body);
+    }
+    window.addEventListener('load', notifyHeight);
+    notifyHeight();
+  })();
+  </script>
 </body>
 </html>
