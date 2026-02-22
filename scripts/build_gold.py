@@ -603,6 +603,22 @@ def main(months: Optional[List[str]] = None, chunk_size: int = 3) -> None:
             continue
 
         dfm = build_metrics(cfg, df)
+
+        # Filter to only the requested months.  Silver files for month M may
+        # contain edge-case records whose dt_partenza_prog falls in an adjacent
+        # month (e.g. trains departing near midnight).  If we let those leak
+        # through, save_gold_tables' dedup (keep="last") would overwrite the
+        # correct historical gold rows for that adjacent month with a tiny
+        # partial slice.
+        month_keys_set = set(chunk)
+        mese_keys = dfm["mese"].astype(str).str.replace("-", "")
+        dfm = dfm[mese_keys.isin(month_keys_set)].copy()
+
+        if dfm.empty:
+            print(f"  no data for {chunk} after month filter, skipping")
+            del df, dfm
+            continue
+
         tables = build_gold(cfg, dfm)
         save_gold_tables(tables)
         all_table_names.update(tables.keys())
