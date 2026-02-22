@@ -86,7 +86,7 @@ function mobileChartMargins(desktop) {
 }
 
 function mobileFont() {
-  return isMobile() ? { color: "#e8eefc", size: 9 } : { color: "#e8eefc" };
+  return isMobile() ? { color: "#334155", size: 9 } : { color: "#334155" };
 }
 
 function candidateFilePaths(root, rel) {
@@ -785,13 +785,13 @@ function ensureHistToggleStyles() {
   style.id = "histToggleStyles";
   style.textContent = `
     .histToggleWrap { display:flex; align-items:center; gap:10px; margin:0 0 8px 0; }
-    .histModeText { font-size:13px; color:#e6e9f2; opacity:0.65; user-select:none; }
+    .histModeText { font-size:13px; color:#334155; opacity:0.65; user-select:none; }
     .histModeText.active { opacity:1; font-weight:600; }
     .histSwitch { position:relative; display:inline-block; width:44px; height:24px; }
     .histSwitch input { opacity:0; width:0; height:0; }
-    .histSlider { position:absolute; cursor:pointer; inset:0; background:rgba(255,255,255,0.22); transition:0.18s; border-radius:24px; }
-    .histSlider:before { position:absolute; content:""; height:18px; width:18px; left:3px; top:3px; background:#ffffff; transition:0.18s; border-radius:50%; }
-    .histSwitch input:checked + .histSlider { background:rgba(255,255,255,0.38); }
+    .histSlider { position:absolute; cursor:pointer; inset:0; background:rgba(15,23,42,0.15); transition:0.18s; border-radius:24px; }
+    .histSlider:before { position:absolute; content:""; height:18px; width:18px; left:3px; top:3px; background:#0073E6; transition:0.18s; border-radius:50%; }
+    .histSwitch input:checked + .histSlider { background:rgba(0,115,230,0.20); }
     .histSwitch input:checked + .histSlider:before { transform: translateX(20px); }
   `;
   document.head.appendChild(style);
@@ -1029,7 +1029,7 @@ function renderSeries() {
   if (diEl && !isCardCollapsed(diEl)) {
     const di = seriesDelayIndex();
     Plotly.react(diEl,
-      [{ x: di.x, y: di.y, type: "scatter", mode: "lines+markers", name: "Delay Index (%)", line: { color: "#ff7aa2" } }],
+      [{ x: di.x, y: di.y, type: "scatter", mode: "lines+markers", name: "Delay Index (%)", line: { color: "#e11d48" } }],
       { margin:mobileChartMargins({l:55,r:20,t:10,b:50}), yaxis:{title:isMobile()?"":"Delay Index (%)",rangemode:"tozero"}, xaxis:{type:"category"}, paper_bgcolor:"rgba(0,0,0,0)", plot_bgcolor:"rgba(0,0,0,0)", font:mobileFont() },
       { displayModeBar: false, responsive: true }
     );
@@ -1216,7 +1216,7 @@ function renderStationsTop10() {
   const label = stationsMetricLabel();
 
   Plotly.react(chart,
-    [{ x:xValues, y:yLabels, type:"bar", orientation:"h", name:label, marker:{color:"rgba(122,162,255,0.75)"} }],
+    [{ x:xValues, y:yLabels, type:"bar", orientation:"h", name:label, marker:{color:"rgba(0,115,230,0.70)"} }],
     { margin:isMobile()?{l:10,r:10,t:10,b:40}:{l:180,r:30,t:10,b:50}, xaxis:{title:isMobile()?"":label,rangemode:"tozero"}, yaxis:{automargin:true}, paper_bgcolor:"rgba(0,0,0,0)", plot_bgcolor:"rgba(0,0,0,0)", font:mobileFont() },
     { displayModeBar: false, responsive: true }
   );
