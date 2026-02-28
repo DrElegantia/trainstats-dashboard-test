@@ -80,6 +80,45 @@ function uniq(arr) { return Array.from(new Set(arr)); }
 
 function isMobile() { return window.innerWidth <= 600; }
 
+/* ────────────────── debounce helper ────────────────── */
+
+let _renderTimer = null;
+function debouncedRenderAll(delay) {
+  if (_renderTimer) clearTimeout(_renderTimer);
+  const ms = delay !== undefined ? delay : (isMobile() ? 120 : 50);
+  _renderTimer = setTimeout(() => { _renderTimer = null; renderAll(); }, ms);
+}
+
+/* ────────────────── filter‑result cache ────────────────── */
+
+const _filterCache = { key: "", kpi: null, series: null, hist: null };
+
+function filterFingerprint() {
+  const f = state.filters;
+  return JSON.stringify([
+    f.year, f.cat, f.dep, f.arr, f.month_from, f.month_to,
+    f.day_types, f.time_slots,
+    (state.data.kpiMonthCat || []).length,
+    (state.data.kpiDetailCat || []).length,
+    (state.data.odMonthCat || []).length,
+    (state.data.odDetailCat || []).length
+  ]);
+}
+
+function invalidateFilterCache() { _filterCache.key = ""; }
+
+function getCachedOrFilter(slot, filterFn) {
+  const fp = filterFingerprint();
+  if (_filterCache.key !== fp) {
+    _filterCache.key = fp;
+    _filterCache.kpi = null;
+    _filterCache.series = null;
+    _filterCache.hist = null;
+  }
+  if (!_filterCache[slot]) _filterCache[slot] = filterFn();
+  return _filterCache[slot];
+}
+
 function mobileChartMargins(desktop) {
   if (!isMobile()) return desktop;
   return { l: Math.min(desktop.l || 50, 35), r: Math.min(desktop.r || 20, 10), t: Math.min(desktop.t || 10, 5), b: Math.min(desktop.b || 50, 40) };
@@ -167,6 +206,41 @@ function parseCSV(text) {
     rows.push(obj);
   }
   return rows;
+}
+
+/**
+ * Async chunked CSV parser – yields to the browser every CHUNK_SIZE rows
+ * so the main thread stays responsive on mobile.
+ */
+function parseCSVAsync(text, chunkSize) {
+  return new Promise(function(resolve) {
+    const t = String(text || "").trim();
+    if (!t) { resolve([]); return; }
+    const lines = t.split(/\r?\n/).filter(function(x) { return String(x || "").length; });
+    if (lines.length <= 1) { resolve([]); return; }
+    const delim = detectDelimiter(lines[0]);
+    const header = splitCSVLine(lines[0], delim).map(function(x) { return String(x || "").trim(); });
+    const rows = [];
+    const CHUNK = chunkSize || 5000;
+    var idx = 1;
+    function chunk() {
+      var end = Math.min(idx + CHUNK, lines.length);
+      for (; idx < end; idx++) {
+        var line = String(lines[idx] || "");
+        if (!line.trim()) continue;
+        var cols = splitCSVLine(line, delim);
+        var obj = {};
+        for (var j = 0; j < header.length; j++) obj[header[j]] = cols[j] ?? "";
+        rows.push(obj);
+      }
+      if (idx < lines.length) {
+        setTimeout(chunk, 0);
+      } else {
+        resolve(rows);
+      }
+    }
+    chunk();
+  });
 }
 
 /* ────────────────── format helpers ────────────────── */
@@ -547,7 +621,7 @@ function initToggleControls() {
     b.onclick = () => {
       state.filters.day_types[i] = !state.filters.day_types[i];
       b.classList.toggle("off", !state.filters.day_types[i]);
-      ensureDataForCurrentFilters().then(renderAll);
+      ensureDataForCurrentFilters().then(debouncedRenderAll);
     };
     dayTypeWrap.appendChild(b);
   });
@@ -563,7 +637,7 @@ function initToggleControls() {
     b.onclick = () => {
       state.filters.time_slots[i] = !state.filters.time_slots[i];
       b.classList.toggle("off", !state.filters.time_slots[i]);
-      ensureDataForCurrentFilters().then(renderAll);
+      ensureDataForCurrentFilters().then(debouncedRenderAll);
     };
     timeSlotWrap.appendChild(b);
   });
@@ -677,7 +751,7 @@ function initFilters() {
     yearSel.appendChild(new Option("Tutti", "all"));
     years.forEach((y) => yearSel.appendChild(new Option(y, y)));
     yearSel.value = state.filters.year || "all";
-    yearSel.onchange = () => { state.filters.year = yearSel.value || "all"; renderAll(); };
+    yearSel.onchange = () => { state.filters.year = yearSel.value || "all"; debouncedRenderAll(); };
   }
 
   if (catSel) {
@@ -685,7 +759,7 @@ function initFilters() {
     catSel.appendChild(new Option("Tutte", "all"));
     cats.forEach((c) => catSel.appendChild(new Option(categoryDisplayName(c), c)));
     catSel.value = state.filters.cat || "all";
-    catSel.onchange = () => { state.filters.cat = catSel.value || "all"; renderAll(); };
+    catSel.onchange = () => { state.filters.cat = catSel.value || "all"; debouncedRenderAll(); };
   }
 
   let deps, arrs;
@@ -716,7 +790,7 @@ function initFilters() {
     depSel.value = state.filters.dep || "all";
     depSel.onchange = () => {
       state.filters.dep = depSel.value || "all"; updateDepAliases();
-      ensureDataForCurrentFilters().then(renderAll);
+      ensureDataForCurrentFilters().then(debouncedRenderAll);
     };
   }
 
@@ -726,7 +800,7 @@ function initFilters() {
     arrSel.value = state.filters.arr || "all";
     arrSel.onchange = () => {
       state.filters.arr = arrSel.value || "all"; updateArrAliases();
-      ensureDataForCurrentFilters().then(renderAll);
+      ensureDataForCurrentFilters().then(debouncedRenderAll);
     };
   }
 
@@ -741,14 +815,14 @@ function initFilters() {
     monthFrom.appendChild(new Option("--", ""));
     for (let i = 0; i < 12; i++) monthFrom.appendChild(new Option(MONTH_NAMES[i], String(i + 1).padStart(2, "0")));
     monthFrom.value = state.filters.month_from || "";
-    monthFrom.onchange = () => { state.filters.month_from = monthFrom.value || ""; renderAll(); };
+    monthFrom.onchange = () => { state.filters.month_from = monthFrom.value || ""; debouncedRenderAll(); };
   }
   if (monthTo) {
     monthTo.innerHTML = "";
     monthTo.appendChild(new Option("--", ""));
     for (let i = 0; i < 12; i++) monthTo.appendChild(new Option(MONTH_NAMES[i], String(i + 1).padStart(2, "0")));
     monthTo.value = state.filters.month_to || "";
-    monthTo.onchange = () => { state.filters.month_to = monthTo.value || ""; renderAll(); };
+    monthTo.onchange = () => { state.filters.month_to = monthTo.value || ""; debouncedRenderAll(); };
   }
 
   if (resetBtn) {
@@ -772,7 +846,8 @@ function initFilters() {
       if (monthTo) monthTo.value = "";
 
       syncToggleUI();
-      renderAll();
+      invalidateFilterCache();
+      debouncedRenderAll();
     };
   }
 }
@@ -908,7 +983,7 @@ function applyDetailDimFilter(rows) {
 
 /* ────────────────── KPI ────────────────── */
 
-function renderKPI() {
+function _computeKpiRows() {
   const stationFiltered = hasStationFilter();
   let useDetail = useDetailAggregation();
   let base;
@@ -933,6 +1008,11 @@ function renderKPI() {
     if (state.filters.dep !== "all") rows = rows.filter(passDep);
     if (state.filters.arr !== "all") rows = rows.filter(passArr);
   }
+  return rows;
+}
+
+function renderKPI() {
+  const rows = getCachedOrFilter("kpi", _computeKpiRows);
 
   const total = rows.reduce((a, r) => a + toNum(r.corse_osservate), 0);
   const late  = rows.reduce((a, r) => a + toNum(r.in_ritardo), 0);
@@ -969,7 +1049,7 @@ function aggregateByMonth(rows) {
   return Array.from(by.values()).sort((a, b) => String(a.key).localeCompare(String(b.key)));
 }
 
-function getFilteredSeriesRows() {
+function _computeSeriesRows() {
   const stationFiltered = hasStationFilter();
   let useDetail = useDetailAggregation();
   let rows;
@@ -998,6 +1078,10 @@ function getFilteredSeriesRows() {
   }
 
   return rows;
+}
+
+function getFilteredSeriesRows() {
+  return getCachedOrFilter("series", _computeSeriesRows);
 }
 
 function seriesMonthly() {
@@ -1307,8 +1391,9 @@ async function lazyLoadCSV(fileName, stateKey) {
   if (_lazyLoaded[fileName]) return;
   if (state.data[stateKey] && state.data[stateKey].length > 0) { _lazyLoaded[fileName] = true; return; }
   const t = await fetchTextAny(candidateFilePaths(state.dataBase, fileName));
-  state.data[stateKey] = t ? parseCSV(t) : [];
+  state.data[stateKey] = t ? await parseCSVAsync(t) : [];
   _lazyLoaded[fileName] = true;
+  invalidateFilterCache();
   // Re-enrich stationsRef with any new code→name mappings from the loaded data
   enrichStationsRefFromFacts();
 }
@@ -1351,23 +1436,38 @@ async function ensureStationDetailData() {
 /**
  * Ensure all datasets needed for the current filter combination are loaded.
  * Call this before renderAll() whenever filters change.
+ * On mobile, loads are sequential to limit peak memory usage.
  */
 async function ensureDataForCurrentFilters() {
-  const loads = [];
   const station = hasStationFilter();
   const detail = hasDetailFilter();
 
-  if (station) {
-    loads.push(ensureOdData());
-    loads.push(ensureHistStationsData());
+  if (isMobile()) {
+    // Sequential loading on mobile to limit peak memory
+    if (station) {
+      await ensureOdData();
+      await ensureHistStationsData();
+    }
+    if (detail) {
+      await ensureDetailData();
+    }
+    if (station && detail) {
+      await ensureStationDetailData();
+    }
+  } else {
+    const loads = [];
+    if (station) {
+      loads.push(ensureOdData());
+      loads.push(ensureHistStationsData());
+    }
+    if (detail) {
+      loads.push(ensureDetailData());
+    }
+    if (station && detail) {
+      loads.push(ensureStationDetailData());
+    }
+    if (loads.length) await Promise.all(loads);
   }
-  if (detail) {
-    loads.push(ensureDetailData());
-  }
-  if (station && detail) {
-    loads.push(ensureStationDetailData());
-  }
-  if (loads.length) await Promise.all(loads);
 }
 
 /* ────────────────── collapsible extra filters ────────────────── */
@@ -1605,7 +1705,7 @@ async function loadAll() {
 
   const parsed = {};
   for (let i = 0; i < toFetch.length; i++) {
-    parsed[toFetch[i]] = texts[i] ? parseCSV(texts[i]) : [];
+    parsed[toFetch[i]] = texts[i] ? await parseCSVAsync(texts[i]) : [];
   }
 
   state.data.kpiMonth              = parsed["kpi_mese.csv"] || [];
