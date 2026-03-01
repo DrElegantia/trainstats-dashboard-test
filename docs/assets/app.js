@@ -89,6 +89,33 @@ function debouncedRenderAll(delay) {
   _renderTimer = setTimeout(() => { _renderTimer = null; renderAll(); }, ms);
 }
 
+/**
+ * Debounced full filter pipeline: waits for rapid filter changes to settle,
+ * then loads required data and renders once.
+ * Prevents multiple concurrent ensureDataForCurrentFilters() calls.
+ */
+let _pipelineTimer = null;
+let _pipelineRunning = false;
+function scheduleFilterPipeline() {
+  if (_pipelineTimer) clearTimeout(_pipelineTimer);
+  // Cancel any pending render-only debounce too
+  if (_renderTimer) { clearTimeout(_renderTimer); _renderTimer = null; }
+  const ms = isMobile() ? 180 : 80;
+  _pipelineTimer = setTimeout(async () => {
+    _pipelineTimer = null;
+    if (_pipelineRunning) return;  // Skip if a previous pipeline is still running
+    _pipelineRunning = true;
+    try {
+      await ensureDataForCurrentFilters();
+      renderAll();
+    } catch (e) {
+      console.error("Filter pipeline error:", e);
+    } finally {
+      _pipelineRunning = false;
+    }
+  }, ms);
+}
+
 /* ────────────────── filter‑result cache ────────────────── */
 
 const _filterCache = { key: "", kpi: null, series: null, hist: null };
@@ -214,20 +241,28 @@ function parseCSV(text) {
  */
 function parseCSVAsync(text, chunkSize) {
   return new Promise(function(resolve) {
-    const t = String(text || "").trim();
+    var t = String(text || "").trim();
     if (!t) { resolve([]); return; }
-    const lines = t.split(/\r?\n/).filter(function(x) { return String(x || "").length; });
+    var lines = t.split(/\r?\n/);
+    t = null;  // Free the original text – we only need the lines array now
+    // Remove empty lines in-place to avoid creating another full array
+    var write = 0;
+    for (var r = 0; r < lines.length; r++) {
+      if (lines[r].length) lines[write++] = lines[r];
+    }
+    lines.length = write;
     if (lines.length <= 1) { resolve([]); return; }
-    const delim = detectDelimiter(lines[0]);
-    const header = splitCSVLine(lines[0], delim).map(function(x) { return String(x || "").trim(); });
-    const rows = [];
-    const CHUNK = chunkSize || 5000;
+    var delim = detectDelimiter(lines[0]);
+    var header = splitCSVLine(lines[0], delim).map(function(x) { return String(x || "").trim(); });
+    var rows = [];
+    var CHUNK = chunkSize || 5000;
     var idx = 1;
     function chunk() {
       var end = Math.min(idx + CHUNK, lines.length);
       for (; idx < end; idx++) {
-        var line = String(lines[idx] || "");
-        if (!line.trim()) continue;
+        var line = lines[idx];
+        lines[idx] = null;  // Release processed line for GC
+        if (!line || !line.trim()) continue;
         var cols = splitCSVLine(line, delim);
         var obj = {};
         for (var j = 0; j < header.length; j++) obj[header[j]] = cols[j] ?? "";
@@ -236,6 +271,7 @@ function parseCSVAsync(text, chunkSize) {
       if (idx < lines.length) {
         setTimeout(chunk, 0);
       } else {
+        lines = null;  // Release the lines array
         resolve(rows);
       }
     }
@@ -621,7 +657,7 @@ function initToggleControls() {
     b.onclick = () => {
       state.filters.day_types[i] = !state.filters.day_types[i];
       b.classList.toggle("off", !state.filters.day_types[i]);
-      ensureDataForCurrentFilters().then(debouncedRenderAll);
+      scheduleFilterPipeline();
     };
     dayTypeWrap.appendChild(b);
   });
@@ -637,7 +673,7 @@ function initToggleControls() {
     b.onclick = () => {
       state.filters.time_slots[i] = !state.filters.time_slots[i];
       b.classList.toggle("off", !state.filters.time_slots[i]);
-      ensureDataForCurrentFilters().then(debouncedRenderAll);
+      scheduleFilterPipeline();
     };
     timeSlotWrap.appendChild(b);
   });
@@ -751,7 +787,7 @@ function initFilters() {
     yearSel.appendChild(new Option("Tutti", "all"));
     years.forEach((y) => yearSel.appendChild(new Option(y, y)));
     yearSel.value = state.filters.year || "all";
-    yearSel.onchange = () => { state.filters.year = yearSel.value || "all"; debouncedRenderAll(); };
+    yearSel.onchange = () => { state.filters.year = yearSel.value || "all"; scheduleFilterPipeline(); };
   }
 
   if (catSel) {
@@ -759,7 +795,7 @@ function initFilters() {
     catSel.appendChild(new Option("Tutte", "all"));
     cats.forEach((c) => catSel.appendChild(new Option(categoryDisplayName(c), c)));
     catSel.value = state.filters.cat || "all";
-    catSel.onchange = () => { state.filters.cat = catSel.value || "all"; debouncedRenderAll(); };
+    catSel.onchange = () => { state.filters.cat = catSel.value || "all"; scheduleFilterPipeline(); };
   }
 
   let deps, arrs;
@@ -790,7 +826,7 @@ function initFilters() {
     depSel.value = state.filters.dep || "all";
     depSel.onchange = () => {
       state.filters.dep = depSel.value || "all"; updateDepAliases();
-      ensureDataForCurrentFilters().then(debouncedRenderAll);
+      scheduleFilterPipeline();
     };
   }
 
@@ -800,7 +836,7 @@ function initFilters() {
     arrSel.value = state.filters.arr || "all";
     arrSel.onchange = () => {
       state.filters.arr = arrSel.value || "all"; updateArrAliases();
-      ensureDataForCurrentFilters().then(debouncedRenderAll);
+      scheduleFilterPipeline();
     };
   }
 
@@ -815,14 +851,14 @@ function initFilters() {
     monthFrom.appendChild(new Option("--", ""));
     for (let i = 0; i < 12; i++) monthFrom.appendChild(new Option(MONTH_NAMES[i], String(i + 1).padStart(2, "0")));
     monthFrom.value = state.filters.month_from || "";
-    monthFrom.onchange = () => { state.filters.month_from = monthFrom.value || ""; debouncedRenderAll(); };
+    monthFrom.onchange = () => { state.filters.month_from = monthFrom.value || ""; scheduleFilterPipeline(); };
   }
   if (monthTo) {
     monthTo.innerHTML = "";
     monthTo.appendChild(new Option("--", ""));
     for (let i = 0; i < 12; i++) monthTo.appendChild(new Option(MONTH_NAMES[i], String(i + 1).padStart(2, "0")));
     monthTo.value = state.filters.month_to || "";
-    monthTo.onchange = () => { state.filters.month_to = monthTo.value || ""; debouncedRenderAll(); };
+    monthTo.onchange = () => { state.filters.month_to = monthTo.value || ""; scheduleFilterPipeline(); };
   }
 
   if (resetBtn) {
@@ -847,7 +883,7 @@ function initFilters() {
 
       syncToggleUI();
       invalidateFilterCache();
-      debouncedRenderAll();
+      scheduleFilterPipeline();
     };
   }
 }
@@ -1386,16 +1422,26 @@ function renderMap() {
 /* ────────────────── mobile lazy loading ────────────────── */
 
 const _lazyLoaded = {};
+const _lazyLoading = {};  // Track in-progress loads to prevent duplicate concurrent fetches
 
 async function lazyLoadCSV(fileName, stateKey) {
   if (_lazyLoaded[fileName]) return;
   if (state.data[stateKey] && state.data[stateKey].length > 0) { _lazyLoaded[fileName] = true; return; }
-  const t = await fetchTextAny(candidateFilePaths(state.dataBase, fileName));
-  state.data[stateKey] = t ? await parseCSVAsync(t) : [];
-  _lazyLoaded[fileName] = true;
-  invalidateFilterCache();
-  // Re-enrich stationsRef with any new code→name mappings from the loaded data
-  enrichStationsRefFromFacts();
+  // If this file is already being loaded, wait for the existing load instead of starting a new one
+  if (_lazyLoading[fileName]) return _lazyLoading[fileName];
+  _lazyLoading[fileName] = (async function() {
+    try {
+      var t = await fetchTextAny(candidateFilePaths(state.dataBase, fileName));
+      state.data[stateKey] = t ? await parseCSVAsync(t) : [];
+      t = null;  // Release text reference for GC
+      _lazyLoaded[fileName] = true;
+      invalidateFilterCache();
+      enrichStationsRefFromFacts();
+    } finally {
+      delete _lazyLoading[fileName];
+    }
+  })();
+  return _lazyLoading[fileName];
 }
 
 async function ensureStationsData() {
@@ -1419,18 +1465,28 @@ async function ensureHistStationsDetailData() {
 }
 
 async function ensureDetailData() {
-  await Promise.all([
-    lazyLoadCSV("kpi_dettaglio_categoria.csv", "kpiDetailCat"),
-    lazyLoadCSV("hist_dettaglio_categoria.csv", "histDetailCat")
-  ]);
+  if (isMobile()) {
+    await lazyLoadCSV("kpi_dettaglio_categoria.csv", "kpiDetailCat");
+    await lazyLoadCSV("hist_dettaglio_categoria.csv", "histDetailCat");
+  } else {
+    await Promise.all([
+      lazyLoadCSV("kpi_dettaglio_categoria.csv", "kpiDetailCat"),
+      lazyLoadCSV("hist_dettaglio_categoria.csv", "histDetailCat")
+    ]);
+  }
 }
 
 /* Load all station-specific detail datasets needed when combining station + detail filters */
 async function ensureStationDetailData() {
-  await Promise.all([
-    ensureOdDetailData(),
-    ensureHistStationsDetailData()
-  ]);
+  if (isMobile()) {
+    await ensureOdDetailData();
+    await ensureHistStationsDetailData();
+  } else {
+    await Promise.all([
+      ensureOdDetailData(),
+      ensureHistStationsDetailData()
+    ]);
+  }
 }
 
 /**
