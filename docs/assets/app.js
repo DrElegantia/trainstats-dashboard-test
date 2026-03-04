@@ -168,13 +168,9 @@ function safePlotlyReact(el, data, layout, config) {
   }
 }
 
-/** On mobile, cap data arrays to the last N points to limit memory. */
-var MOBILE_MAX_POINTS = 24;
-function capDataForMobile(obj) {
-  if (!isMobile() || !obj || !obj.x) return obj;
-  var len = obj.x.length;
-  if (len <= MOBILE_MAX_POINTS) return obj;
-  return { x: obj.x.slice(len - MOBILE_MAX_POINTS), y: obj.y.slice(len - MOBILE_MAX_POINTS) };
+/** On mobile, use lines-only (no markers = fewer SVG elements). */
+function mobileTraceMode() {
+  return isMobile() ? "lines" : "lines+markers";
 }
 
 function mobileFont() {
@@ -889,7 +885,10 @@ function initFilters() {
 
   if (resetBtn) {
     resetBtn.onclick = () => {
-      state.filters.year = "all";
+      // On mobile, reset to the most recent year (not "all") to keep data light
+      var defaultYear = "all";
+      if (isMobile() && years.length) defaultYear = years[years.length - 1];
+      state.filters.year = defaultYear;
       state.filters.cat = "all";
       state.filters.dep = "all";
       state.filters.arr = "all";
@@ -900,7 +899,7 @@ function initFilters() {
       state._depAliases = null;
       state._arrAliases = null;
 
-      if (yearSel) yearSel.value = "all";
+      if (yearSel) yearSel.value = defaultYear;
       if (catSel) catSel.value = "all";
       if (depSel) depSel.value = "all";
       if (arrSel) arrSel.value = "all";
@@ -1173,19 +1172,19 @@ function renderSeries() {
   const mEl = firstEl(["chartMonthly","chartMonth","chartMese","chartSeriesMonthly"]);
 
   if (diEl && !isCardCollapsed(diEl)) {
-    const di = capDataForMobile(seriesDelayIndex());
+    const di = seriesDelayIndex();
     safePlotlyReact(diEl,
-      [{ x: di.x, y: di.y, type: "scatter", mode: "lines+markers", name: "Delay Index (%)", line: { color: "#e11d48" } }],
+      [{ x: di.x, y: di.y, type: "scatter", mode: mobileTraceMode(), name: "Delay Index (%)", line: { color: "#e11d48" } }],
       { margin:mobileChartMargins({l:55,r:20,t:10,b:50}), yaxis:{title:isMobile()?"":"Delay Index (%)",rangemode:"tozero"}, xaxis:{type:"category"}, paper_bgcolor:"rgba(0,0,0,0)", plot_bgcolor:"rgba(0,0,0,0)", font:mobileFont() },
       { displayModeBar: false, responsive: true }
     );
   }
 
   if (mEl && !isCardCollapsed(mEl)) {
-    const m = capDataForMobile(seriesMonthly());
+    const m = seriesMonthly();
     const yTitle = metricLabel();
     safePlotlyReact(mEl,
-      [{ x: m.x, y: m.y, type: "scatter", mode: "lines+markers", name: yTitle }],
+      [{ x: m.x, y: m.y, type: "scatter", mode: mobileTraceMode(), name: yTitle }],
       { margin:mobileChartMargins({l:50,r:20,t:10,b:50}), yaxis:{title:isMobile()?"":yTitle,rangemode:"tozero"}, xaxis:{type:"category"}, paper_bgcolor:"rgba(0,0,0,0)", plot_bgcolor:"rgba(0,0,0,0)", font:mobileFont() },
       { displayModeBar: false, responsive: true }
     );
@@ -1911,6 +1910,13 @@ async function loadAll() {
   document.addEventListener("click", function() {
     document.querySelectorAll(".info-tip.tip-active").forEach(function(t) { t.classList.remove("tip-active"); });
   });
+
+  // On mobile, default to the most recent year so we only process ~12 months
+  // instead of the full 36+. Users can still select "Tutti" if they want.
+  if (isMobile() && state.filters.year === "all") {
+    const years = uniq(state.data.kpiMonth.map((r) => yearFromMonth(r.mese)).filter(Boolean)).sort();
+    if (years.length) state.filters.year = years[years.length - 1];
+  }
 
   initFilters();
   initToggleControls();
