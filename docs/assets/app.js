@@ -100,7 +100,7 @@ function scheduleFilterPipeline() {
   if (_pipelineTimer) clearTimeout(_pipelineTimer);
   // Cancel any pending render-only debounce too
   if (_renderTimer) { clearTimeout(_renderTimer); _renderTimer = null; }
-  const ms = isMobile() ? 180 : 80;
+  const ms = isMobile() ? 300 : 80;
   _pipelineTimer = setTimeout(async () => {
     _pipelineTimer = null;
     if (_pipelineRunning) return;  // Skip if a previous pipeline is still running
@@ -118,7 +118,7 @@ function scheduleFilterPipeline() {
 
 /* ────────────────── filter‑result cache ────────────────── */
 
-const _filterCache = { key: "", kpi: null, series: null, hist: null };
+const _filterCache = { key: "", kpi: null, series: null, hist: null, stationsRows: null, mapRows: null };
 
 function filterFingerprint() {
   const f = state.filters;
@@ -128,7 +128,9 @@ function filterFingerprint() {
     (state.data.kpiMonthCat || []).length,
     (state.data.kpiDetailCat || []).length,
     (state.data.odMonthCat || []).length,
-    (state.data.odDetailCat || []).length
+    (state.data.odDetailCat || []).length,
+    (state.data.stationsMonthNode || []).length,
+    (state.data.stationsDetailNode || []).length
   ]);
 }
 
@@ -141,6 +143,8 @@ function getCachedOrFilter(slot, filterFn) {
     _filterCache.kpi = null;
     _filterCache.series = null;
     _filterCache.hist = null;
+    _filterCache.stationsRows = null;
+    _filterCache.mapRows = null;
   }
   if (!_filterCache[slot]) _filterCache[slot] = filterFn();
   return _filterCache[slot];
@@ -1288,6 +1292,17 @@ function stationsMetricLabel() {
   return labels[m] || m;
 }
 
+/* ────────────────── stations filtered rows (cached) ────────────────── */
+
+function _computeStationsRows() {
+  const useDetail = useDetailAggregation() && state.data.stationsDetailNode && state.data.stationsDetailNode.length > 0;
+  const base = useDetail ? state.data.stationsDetailNode : state.data.stationsMonthNode;
+  let rows = base || [];
+  rows = applyCommonFilters(rows, "mese");
+  if (useDetail) rows = applyDetailDimFilter(rows);
+  return rows;
+}
+
 /* ────────────────── stations top 10 (capoluoghi only) ────────────────── */
 
 function renderStationsTop10() {
@@ -1295,12 +1310,7 @@ function renderStationsTop10() {
   const chart = document.getElementById("chartStationsTop10");
   if (!chart || isCardCollapsed(chart)) return;
 
-  const useDetail = useDetailAggregation() && state.data.stationsDetailNode && state.data.stationsDetailNode.length > 0;
-  const base = useDetail ? state.data.stationsDetailNode : state.data.stationsMonthNode;
-
-  let rows = base || [];
-  rows = applyCommonFilters(rows, "mese");
-  if (useDetail) rows = applyDetailDimFilter(rows);
+  const rows = getCachedOrFilter("stationsRows", _computeStationsRows);
 
   // Aggregate by capoluogo (provincial capital) instead of individual station
   const agg = new Map();
@@ -1355,12 +1365,7 @@ function renderMap() {
 
   clearMarkers();
 
-  const useDetail = useDetailAggregation() && state.data.stationsDetailNode && state.data.stationsDetailNode.length > 0;
-  const base = useDetail ? state.data.stationsDetailNode : state.data.stationsMonthNode;
-
-  let rows = base || [];
-  rows = applyCommonFilters(rows, "mese");
-  if (useDetail) rows = applyDetailDimFilter(rows);
+  const rows = getCachedOrFilter("stationsRows", _computeStationsRows);
 
   const agg = new Map();
   for (const r of rows) {
@@ -1417,6 +1422,38 @@ function renderMap() {
 
   if (bounds.length > 3) { try { state.map.fitBounds(bounds, { padding:[20,20] }); } catch {} }
   setTimeout(() => { try { state.map.invalidateSize(); } catch {} }, 100);
+}
+
+/* ────────────────── mobile memory management ────────────────── */
+
+/**
+ * On mobile, release heavy datasets that are no longer required by the
+ * current filter combination.  This prevents holding 150+ MB of parsed
+ * objects in memory simultaneously — the main cause of OOM crashes.
+ */
+function releaseUnusedDatasets() {
+  if (!isMobile()) return;
+  const station = hasStationFilter();
+  const detail  = hasDetailFilter();
+
+  // Detail datasets — only needed when a detail filter (day type / time slot) is active
+  if (!detail) {
+    if (state.data.kpiDetailCat.length)            { state.data.kpiDetailCat = [];            delete _lazyLoaded["kpi_dettaglio_categoria.csv"]; }
+    if (state.data.histDetailCat.length)            { state.data.histDetailCat = [];            delete _lazyLoaded["hist_dettaglio_categoria.csv"]; }
+    if (state.data.stationsDetailNode.length)       { state.data.stationsDetailNode = [];       delete _lazyLoaded["stazioni_dettaglio_categoria_nodo.csv"]; }
+    if (state.data.histStationsDetailRuolo.length)  { state.data.histStationsDetailRuolo = [];  delete _lazyLoaded["hist_stazioni_dettaglio_categoria_ruolo.csv"]; }
+    if (state.data.odDetailCat.length)              { state.data.odDetailCat = [];              delete _lazyLoaded["od_dettaglio_categoria.csv"]; }
+  }
+
+  // Station (OD) datasets — only needed when dep/arr is set
+  if (!station) {
+    if (state.data.odMonthCat.length)               { state.data.odMonthCat = [];               delete _lazyLoaded["od_mese_categoria.csv"]; }
+    if (state.data.odDetailCat.length)              { state.data.odDetailCat = [];              delete _lazyLoaded["od_dettaglio_categoria.csv"]; }
+    if (state.data.histStationsMonthRuolo.length)   { state.data.histStationsMonthRuolo = [];   delete _lazyLoaded["hist_stazioni_mese_categoria_ruolo.csv"]; }
+    if (state.data.histStationsDetailRuolo.length)  { state.data.histStationsDetailRuolo = [];  delete _lazyLoaded["hist_stazioni_dettaglio_categoria_ruolo.csv"]; }
+  }
+
+  invalidateFilterCache();
 }
 
 /* ────────────────── mobile lazy loading ────────────────── */
@@ -1476,6 +1513,10 @@ async function ensureDetailData() {
   }
 }
 
+async function ensureStationsDetailNodeData() {
+  await lazyLoadCSV("stazioni_dettaglio_categoria_nodo.csv", "stationsDetailNode");
+}
+
 /* Load all station-specific detail datasets needed when combining station + detail filters */
 async function ensureStationDetailData() {
   if (isMobile()) {
@@ -1492,11 +1533,15 @@ async function ensureStationDetailData() {
 /**
  * Ensure all datasets needed for the current filter combination are loaded.
  * Call this before renderAll() whenever filters change.
- * On mobile, loads are sequential to limit peak memory usage.
+ * On mobile, loads are sequential to limit peak memory usage and
+ * unused datasets are released first to free memory before new loads.
  */
 async function ensureDataForCurrentFilters() {
   const station = hasStationFilter();
   const detail = hasDetailFilter();
+
+  // On mobile, release datasets no longer required BEFORE loading new ones
+  releaseUnusedDatasets();
 
   if (isMobile()) {
     // Sequential loading on mobile to limit peak memory
@@ -1506,6 +1551,7 @@ async function ensureDataForCurrentFilters() {
     }
     if (detail) {
       await ensureDetailData();
+      await ensureStationsDetailNodeData();
     }
     if (station && detail) {
       await ensureStationDetailData();
@@ -1518,6 +1564,7 @@ async function ensureDataForCurrentFilters() {
     }
     if (detail) {
       loads.push(ensureDetailData());
+      loads.push(ensureStationsDetailNodeData());
     }
     if (station && detail) {
       loads.push(ensureStationDetailData());
@@ -1668,10 +1715,26 @@ function renderFilterBadges() {
 function renderAll() {
   renderFilterBadges();
   renderKPI();
-  renderSeries();
-  renderHist();
-  renderStationsTop10();
-  renderMap();
+
+  if (isMobile()) {
+    // Stagger heavy chart renders across animation frames so the browser
+    // can reclaim memory between draws and keep the UI responsive.
+    requestAnimationFrame(() => {
+      renderSeries();
+      requestAnimationFrame(() => {
+        renderHist();
+        requestAnimationFrame(() => {
+          renderStationsTop10();
+          requestAnimationFrame(() => { renderMap(); });
+        });
+      });
+    });
+  } else {
+    renderSeries();
+    renderHist();
+    renderStationsTop10();
+    renderMap();
+  }
 }
 
 /* ────────────────── data loading ────────────────── */
