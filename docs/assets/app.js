@@ -261,7 +261,7 @@ function parseCSV(text) {
  * Async chunked CSV parser – yields to the browser every CHUNK_SIZE rows
  * so the main thread stays responsive on mobile.
  */
-function parseCSVAsync(text, chunkSize) {
+function parseCSVAsync(text, chunkSize, filterFn) {
   return new Promise(function(resolve) {
     var t = String(text || "").trim();
     if (!t) { resolve([]); return; }
@@ -288,7 +288,7 @@ function parseCSVAsync(text, chunkSize) {
         var cols = splitCSVLine(line, delim);
         var obj = {};
         for (var j = 0; j < header.length; j++) obj[header[j]] = cols[j] ?? "";
-        rows.push(obj);
+        if (!filterFn || filterFn(obj)) rows.push(obj);
       }
       if (idx < lines.length) {
         setTimeout(chunk, 0);
@@ -809,7 +809,7 @@ function initFilters() {
     yearSel.appendChild(new Option("Tutti", "all"));
     years.forEach((y) => yearSel.appendChild(new Option(y, y)));
     yearSel.value = state.filters.year || "all";
-    yearSel.onchange = () => { state.filters.year = yearSel.value || "all"; scheduleFilterPipeline(); };
+    yearSel.onchange = () => { state.filters.year = yearSel.value || "all"; invalidateLazyOnYearChange(); scheduleFilterPipeline(); };
   }
 
   if (catSel) {
@@ -1482,8 +1482,43 @@ function releaseUnusedDatasets() {
 const _lazyLoaded = {};
 const _lazyLoading = {};  // Track in-progress loads to prevent duplicate concurrent fetches
 
-/** On mobile, cap row count for very large lazy-loaded files to prevent OOM. */
-var MOBILE_MAX_LAZY_ROWS = 150000;
+/**
+ * On mobile, build a row filter that drops rows outside the selected year
+ * during parsing. This avoids allocating 200k+ objects that will immediately
+ * be discarded by the filter pipeline.
+ */
+function mobileYearFilter() {
+  if (!isMobile()) return null;
+  var y = state.filters.year;
+  if (!y || y === "all") return null;
+  return function(row) {
+    var m = row.mese || "";
+    return m.slice(0, 4) === y;
+  };
+}
+
+/** On mobile, when the year changes, flush all lazy-loaded data so it
+ *  gets re-fetched and re-filtered for the new year. */
+function invalidateLazyOnYearChange() {
+  if (!isMobile()) return;
+  var keys = Object.keys(_lazyLoaded);
+  for (var i = 0; i < keys.length; i++) delete _lazyLoaded[keys[i]];
+  // Clear the corresponding state arrays
+  var slotMap = {
+    "od_mese_categoria.csv": "odMonthCat",
+    "od_dettaglio_categoria.csv": "odDetailCat",
+    "hist_stazioni_mese_categoria_ruolo.csv": "histStationsMonthRuolo",
+    "hist_stazioni_dettaglio_categoria_ruolo.csv": "histStationsDetailRuolo",
+    "kpi_dettaglio_categoria.csv": "kpiDetailCat",
+    "hist_dettaglio_categoria.csv": "histDetailCat",
+    "stazioni_dettaglio_categoria_nodo.csv": "stationsDetailNode",
+    "stazioni_mese_categoria_nodo.csv": "stationsMonthNode"
+  };
+  for (var file in slotMap) {
+    if (state.data[slotMap[file]]) state.data[slotMap[file]] = [];
+  }
+  invalidateFilterCache();
+}
 
 async function lazyLoadCSV(fileName, stateKey) {
   if (_lazyLoaded[fileName]) return;
@@ -1493,13 +1528,8 @@ async function lazyLoadCSV(fileName, stateKey) {
   _lazyLoading[fileName] = (async function() {
     try {
       var t = await fetchTextAny(candidateFilePaths(state.dataBase, fileName));
-      var rows = t ? await parseCSVAsync(t) : [];
+      var rows = t ? await parseCSVAsync(t, 5000, mobileYearFilter()) : [];
       t = null;  // Release text reference for GC
-      // On mobile, cap rows to prevent OOM with very large datasets
-      if (isMobile() && rows.length > MOBILE_MAX_LAZY_ROWS) {
-        console.warn("lazyLoadCSV: capping " + fileName + " from " + rows.length + " to " + MOBILE_MAX_LAZY_ROWS + " rows on mobile");
-        rows = rows.slice(rows.length - MOBILE_MAX_LAZY_ROWS);
-      }
       state.data[stateKey] = rows;
       _lazyLoaded[fileName] = true;
       invalidateFilterCache();
