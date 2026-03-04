@@ -1195,6 +1195,19 @@ function renderSeries() {
 
 function normalizeBucketLabel(s) { return String(s || "").replace(/\s+/g, "").trim(); }
 
+/** Return true if a histogram bucket label represents delay > 5 minutes.
+ *  Matches: (5,10], (10,15], (15,30], (30,60], (60,120], > 120 */
+function isBucketOver5(label) {
+  var s = String(label || "").trim();
+  if (s.startsWith(">")) return true;
+  // Extract lower bound from "(lower,upper]"
+  var m = s.match(/\((\d+),/);
+  return m ? parseInt(m[1], 10) >= 5 : false;
+}
+
+/** GDP per capita per minute: 37000 / 365 / 24 / 60 */
+var COST_PER_MINUTE = 37000 / (365 * 24 * 60);
+
 function renderHist() {
   if (typeof Plotly !== "object") return;
   const chart = firstEl(["chartHist","histChart","chartDistribution"]);
@@ -1254,6 +1267,7 @@ function renderHist() {
 
   const byBucket = new Map();
   let total = 0;
+  let delayMinsOver5 = 0;
   for (const r of rows) {
     const raw = String(r.bucket_ritardo_arrivo || r.bucket || "").trim();
     if (!raw) continue;
@@ -1262,6 +1276,8 @@ function renderHist() {
     total += c;
     if (!byBucket.has(key)) byBucket.set(key, { label: raw, count: 0 });
     byBucket.get(key).count += c;
+    // Accumulate delay minutes for buckets > 5 min
+    if (isBucketOver5(raw)) delayMinsOver5 += toNum(r.minuti_ritardo);
   }
 
   const order = Array.isArray(state.manifest.delay_bucket_labels) && state.manifest.delay_bucket_labels.length
@@ -1281,6 +1297,21 @@ function renderHist() {
     { margin:mobileChartMargins({l:50,r:20,t:10,b:70}), yaxis:{title:isMobile()?"":showPct?"%":"Conteggio",rangemode:"tozero"}, xaxis:{tickangle:isMobile()?-45:-35,tickfont:{size:isMobile()?7:undefined}}, paper_bgcolor:"rgba(0,0,0,0)", plot_bgcolor:"rgba(0,0,0,0)", font:mobileFont() },
     { displayModeBar: false, responsive: true }
   );
+
+  // Cost indicator: GDP per-capita cost of delays > 5 min
+  var costEl = document.getElementById("costIndicator");
+  var costVal = document.getElementById("costValue");
+  if (costEl && costVal) {
+    if (delayMinsOver5 > 0) {
+      var cost = delayMinsOver5 * COST_PER_MINUTE;
+      costVal.textContent = cost >= 1000
+        ? "\u20AC " + (cost / 1000).toFixed(1) + "k"
+        : "\u20AC " + cost.toFixed(2);
+      costEl.style.display = "";
+    } else {
+      costEl.style.display = "none";
+    }
+  }
 }
 
 /* ────────────────── map helpers ────────────────── */
