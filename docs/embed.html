@@ -182,6 +182,16 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="assets/app.js"></script>
   <script>
+  /* ── Override "Apri completa" link if parentUrl is provided ── */
+  (function () {
+    var params = new URLSearchParams(window.location.search);
+    var parentUrl = params.get('parentUrl');
+    if (parentUrl) {
+      var link = document.querySelector('.embed-fullscreen-link');
+      if (link) link.href = parentUrl;
+    }
+  })();
+
   /* ── Notify parent frame of content height for seamless embedding ── */
   (function () {
     var PARENT_ORIGIN = 'https://www.umbertobertonelli.it';
