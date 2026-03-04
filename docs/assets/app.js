@@ -96,6 +96,7 @@ function debouncedRenderAll(delay) {
  */
 let _pipelineTimer = null;
 let _pipelineRunning = false;
+let _pipelineQueued = false;
 function scheduleFilterPipeline() {
   if (_pipelineTimer) clearTimeout(_pipelineTimer);
   // Cancel any pending render-only debounce too
@@ -103,7 +104,7 @@ function scheduleFilterPipeline() {
   const ms = isMobile() ? 300 : 80;
   _pipelineTimer = setTimeout(async () => {
     _pipelineTimer = null;
-    if (_pipelineRunning) return;  // Skip if a previous pipeline is still running
+    if (_pipelineRunning) { _pipelineQueued = true; return; }
     _pipelineRunning = true;
     try {
       await ensureDataForCurrentFilters();
@@ -112,6 +113,8 @@ function scheduleFilterPipeline() {
       console.error("Filter pipeline error:", e);
     } finally {
       _pipelineRunning = false;
+      // If a filter change arrived while we were running, process it now
+      if (_pipelineQueued) { _pipelineQueued = false; scheduleFilterPipeline(); }
     }
   }, ms);
 }
@@ -153,6 +156,25 @@ function getCachedOrFilter(slot, filterFn) {
 function mobileChartMargins(desktop) {
   if (!isMobile()) return desktop;
   return { l: Math.min(desktop.l || 50, 35), r: Math.min(desktop.r || 20, 10), t: Math.min(desktop.t || 10, 5), b: Math.min(desktop.b || 50, 40) };
+}
+
+/** On mobile, purge old Plotly chart before re-rendering to free memory. */
+function safePlotlyReact(el, data, layout, config) {
+  try {
+    if (isMobile() && el && el.data) Plotly.purge(el);
+    Plotly.react(el, data, layout, config);
+  } catch (e) {
+    console.error("Plotly render error for #" + (el && el.id), e);
+  }
+}
+
+/** On mobile, cap data arrays to the last N points to limit memory. */
+var MOBILE_MAX_POINTS = 24;
+function capDataForMobile(obj) {
+  if (!isMobile() || !obj || !obj.x) return obj;
+  var len = obj.x.length;
+  if (len <= MOBILE_MAX_POINTS) return obj;
+  return { x: obj.x.slice(len - MOBILE_MAX_POINTS), y: obj.y.slice(len - MOBILE_MAX_POINTS) };
 }
 
 function mobileFont() {
@@ -1151,8 +1173,8 @@ function renderSeries() {
   const mEl = firstEl(["chartMonthly","chartMonth","chartMese","chartSeriesMonthly"]);
 
   if (diEl && !isCardCollapsed(diEl)) {
-    const di = seriesDelayIndex();
-    Plotly.react(diEl,
+    const di = capDataForMobile(seriesDelayIndex());
+    safePlotlyReact(diEl,
       [{ x: di.x, y: di.y, type: "scatter", mode: "lines+markers", name: "Delay Index (%)", line: { color: "#e11d48" } }],
       { margin:mobileChartMargins({l:55,r:20,t:10,b:50}), yaxis:{title:isMobile()?"":"Delay Index (%)",rangemode:"tozero"}, xaxis:{type:"category"}, paper_bgcolor:"rgba(0,0,0,0)", plot_bgcolor:"rgba(0,0,0,0)", font:mobileFont() },
       { displayModeBar: false, responsive: true }
@@ -1160,9 +1182,9 @@ function renderSeries() {
   }
 
   if (mEl && !isCardCollapsed(mEl)) {
-    const m = seriesMonthly();
+    const m = capDataForMobile(seriesMonthly());
     const yTitle = metricLabel();
-    Plotly.react(mEl,
+    safePlotlyReact(mEl,
       [{ x: m.x, y: m.y, type: "scatter", mode: "lines+markers", name: yTitle }],
       { margin:mobileChartMargins({l:50,r:20,t:10,b:50}), yaxis:{title:isMobile()?"":yTitle,rangemode:"tozero"}, xaxis:{type:"category"}, paper_bgcolor:"rgba(0,0,0,0)", plot_bgcolor:"rgba(0,0,0,0)", font:mobileFont() },
       { displayModeBar: false, responsive: true }
@@ -1255,7 +1277,7 @@ function renderHist() {
     y.push(showPct ? (total > 0 ? (c / total) * 100 : 0) : c);
   }
 
-  Plotly.react(chart,
+  safePlotlyReact(chart,
     [{ x, y, type: "bar", name: showPct ? "%" : "Conteggio" }],
     { margin:mobileChartMargins({l:50,r:20,t:10,b:70}), yaxis:{title:isMobile()?"":showPct?"%":"Conteggio",rangemode:"tozero"}, xaxis:{tickangle:isMobile()?-45:-35,tickfont:{size:isMobile()?7:undefined}}, paper_bgcolor:"rgba(0,0,0,0)", plot_bgcolor:"rgba(0,0,0,0)", font:mobileFont() },
     { displayModeBar: false, responsive: true }
@@ -1345,7 +1367,7 @@ function renderStationsTop10() {
   const xValues = top10.map((o) => toNum(o[metric]));
   const label = stationsMetricLabel();
 
-  Plotly.react(chart,
+  safePlotlyReact(chart,
     [{ x:xValues, y:yLabels, type:"bar", orientation:"h", name:label, marker:{color:"rgba(0,115,230,0.70)"} }],
     { margin:isMobile()?{l:10,r:10,t:10,b:40}:{l:180,r:30,t:10,b:50}, xaxis:{title:isMobile()?"":label,rangemode:"tozero"}, yaxis:{automargin:true}, paper_bgcolor:"rgba(0,0,0,0)", plot_bgcolor:"rgba(0,0,0,0)", font:mobileFont() },
     { displayModeBar: false, responsive: true }
@@ -1461,6 +1483,9 @@ function releaseUnusedDatasets() {
 const _lazyLoaded = {};
 const _lazyLoading = {};  // Track in-progress loads to prevent duplicate concurrent fetches
 
+/** On mobile, cap row count for very large lazy-loaded files to prevent OOM. */
+var MOBILE_MAX_LAZY_ROWS = 150000;
+
 async function lazyLoadCSV(fileName, stateKey) {
   if (_lazyLoaded[fileName]) return;
   if (state.data[stateKey] && state.data[stateKey].length > 0) { _lazyLoaded[fileName] = true; return; }
@@ -1469,8 +1494,14 @@ async function lazyLoadCSV(fileName, stateKey) {
   _lazyLoading[fileName] = (async function() {
     try {
       var t = await fetchTextAny(candidateFilePaths(state.dataBase, fileName));
-      state.data[stateKey] = t ? await parseCSVAsync(t) : [];
+      var rows = t ? await parseCSVAsync(t) : [];
       t = null;  // Release text reference for GC
+      // On mobile, cap rows to prevent OOM with very large datasets
+      if (isMobile() && rows.length > MOBILE_MAX_LAZY_ROWS) {
+        console.warn("lazyLoadCSV: capping " + fileName + " from " + rows.length + " to " + MOBILE_MAX_LAZY_ROWS + " rows on mobile");
+        rows = rows.slice(rows.length - MOBILE_MAX_LAZY_ROWS);
+      }
+      state.data[stateKey] = rows;
       _lazyLoaded[fileName] = true;
       invalidateFilterCache();
       enrichStationsRefFromFacts();
@@ -1719,13 +1750,14 @@ function renderAll() {
   if (isMobile()) {
     // Stagger heavy chart renders across animation frames so the browser
     // can reclaim memory between draws and keep the UI responsive.
+    // Each render is wrapped in try-catch so one failure doesn't block the rest.
     requestAnimationFrame(() => {
-      renderSeries();
+      try { renderSeries(); } catch (e) { console.error("renderSeries error:", e); }
       requestAnimationFrame(() => {
-        renderHist();
+        try { renderHist(); } catch (e) { console.error("renderHist error:", e); }
         requestAnimationFrame(() => {
-          renderStationsTop10();
-          requestAnimationFrame(() => { renderMap(); });
+          try { renderStationsTop10(); } catch (e) { console.error("renderStationsTop10 error:", e); }
+          requestAnimationFrame(() => { try { renderMap(); } catch (e) { console.error("renderMap error:", e); } });
         });
       });
     });
