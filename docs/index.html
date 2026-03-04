@@ -3,49 +3,90 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Ritardo Treni Italia | Statistiche e Puntualit&agrave; in Tempo Reale</title>
-  <meta name="description" content="Dashboard interattiva su ritardi, cancellazioni e puntualit&agrave; dei treni in Italia. Dati aggiornati quotidianamente: statistiche per stazione, categoria e tratta. A cura di Umberto Bertonelli." />
+  <title>Ritardo Treni Italia | Statistiche Puntualit&agrave; Ferroviaria</title>
+  <meta name="description" content="Dashboard interattiva su ritardi, cancellazioni e puntualit&agrave; dei treni in Italia. Dati aggiornati quotidianamente: statistiche per stazione, categoria e tratta. Costo pro capite dei ritardi. A cura di Umberto Bertonelli." />
   <meta name="author" content="Umberto Bertonelli" />
-  <meta name="keywords" content="ritardo treni, ritardo treni oggi, statistiche treni italia, treni in ritardo, cancellazioni treni, puntualit&agrave; treni, ritardo treni regionali, ritardo trenitalia, dashboard treni" />
+  <meta name="keywords" content="ritardo treni, ritardo treni oggi, statistiche treni italia, treni in ritardo, cancellazioni treni, puntualit&agrave; treni, ritardo treni regionali, ritardo trenitalia, dashboard treni, costo ritardi ferroviari" />
   <link rel="canonical" href="https://www.umbertobertonelli.it/ritardo-treni/" />
 
   <!-- Open Graph -->
   <meta property="og:type" content="website" />
-  <meta property="og:title" content="Ritardo Treni Italia | Statistiche e Puntualit&agrave; in Tempo Reale" />
+  <meta property="og:title" content="Ritardo Treni Italia | Statistiche Puntualit&agrave; Ferroviaria" />
   <meta property="og:description" content="Dashboard interattiva con dati aggiornati ogni giorno su ritardi, cancellazioni e soppressioni dei treni in Italia. Filtra per stazione, categoria, tratta e fascia oraria." />
   <meta property="og:url" content="https://www.umbertobertonelli.it/ritardo-treni/" />
   <meta property="og:site_name" content="Umberto Bertonelli" />
   <meta property="og:locale" content="it_IT" />
+  <!-- og:image: sostituire con uno screenshot 1200x630 della dashboard -->
+  <meta property="og:image" content="https://www.umbertobertonelli.it/ritardo-treni/og-dashboard.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="TrainStats Dashboard - Statistiche ritardi treni Italia" />
 
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Ritardo Treni Italia | Statistiche e Puntualit&agrave; in Tempo Reale" />
+  <meta name="twitter:title" content="Ritardo Treni Italia | Statistiche Puntualit&agrave; Ferroviaria" />
   <meta name="twitter:description" content="Dashboard interattiva su ritardi e puntualit&agrave; dei treni in Italia, aggiornata quotidianamente." />
+  <meta name="twitter:image" content="https://www.umbertobertonelli.it/ritardo-treni/og-dashboard.png" />
 
   <!-- Structured Data -->
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
-    "@type": "WebApplication",
-    "name": "Ritardo Treni Italia – Dashboard Statistiche",
-    "description": "Dashboard interattiva su ritardi, cancellazioni e puntualità dei treni in Italia. Dati aggiornati quotidianamente con statistiche per stazione, categoria e tratta.",
-    "url": "https://www.umbertobertonelli.it/ritardo-treni/",
-    "applicationCategory": "UtilitiesApplication",
-    "operatingSystem": "Web",
-    "author": {
-      "@type": "Person",
-      "name": "Umberto Bertonelli",
-      "url": "https://www.umbertobertonelli.it/"
-    },
-    "offers": {
-      "@type": "Offer",
-      "price": "0",
-      "priceCurrency": "EUR"
-    },
-    "inLanguage": "it"
+    "@graph": [
+      {
+        "@type": "WebApplication",
+        "name": "Ritardo Treni Italia \u2013 Dashboard Statistiche",
+        "description": "Dashboard interattiva su ritardi, cancellazioni e puntualit\u00e0 dei treni in Italia. Dati aggiornati quotidianamente con statistiche per stazione, categoria e tratta.",
+        "url": "https://www.umbertobertonelli.it/ritardo-treni/",
+        "applicationCategory": "UtilitiesApplication",
+        "operatingSystem": "Web",
+        "author": {
+          "@type": "Person",
+          "name": "Umberto Bertonelli",
+          "url": "https://www.umbertobertonelli.it/"
+        },
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "EUR"
+        },
+        "inLanguage": "it"
+      },
+      {
+        "@type": "Dataset",
+        "name": "Statistiche ritardi treni Italia",
+        "description": "Dataset con dati giornalieri su ritardi, cancellazioni, soppressioni e puntualit\u00e0 dei treni in Italia, suddivisi per stazione, categoria e tratta.",
+        "url": "https://www.umbertobertonelli.it/ritardo-treni/",
+        "temporalCoverage": "2024/..",
+        "spatialCoverage": {
+          "@type": "Place",
+          "name": "Italia"
+        },
+        "license": "https://opensource.org/licenses/MIT",
+        "creator": {
+          "@type": "Person",
+          "name": "Umberto Bertonelli",
+          "url": "https://www.umbertobertonelli.it/"
+        },
+        "distribution": {
+          "@type": "DataDownload",
+          "encodingFormat": "text/csv",
+          "contentUrl": "https://github.com/DrElegantia/trainstats-dashboard-test"
+        },
+        "variableMeasured": [
+          "Ritardo medio (minuti)",
+          "Percentuale treni in ritardo",
+          "Treni cancellati",
+          "Treni soppressi",
+          "Costo pro capite ritardi"
+        ]
+      }
+    ]
   }
   </script>
 
+  <link rel="preconnect" href="https://cdn.plot.ly" crossorigin />
+  <link rel="preconnect" href="https://unpkg.com" crossorigin />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="assets/style.css" />
 </head>
@@ -55,10 +96,17 @@
     <div class="loading-text">Caricamento dati...</div>
   </div>
 
+  <noscript>
+    <div style="padding:24px;text-align:center;background:#fef3c7;border-bottom:2px solid #f59e0b;">
+      <strong>Questa dashboard richiede JavaScript per funzionare.</strong>
+      <p>Attiva JavaScript nel browser per visualizzare le statistiche interattive sui ritardi dei treni in Italia.</p>
+    </div>
+  </noscript>
+
   <header class="topbar">
     <div class="title">
-      <h1>TrainStats Dashboard</h1>
-      <div class="subtitle">Dashboard sul ritardo dei treni, aggiornata giornalmente</div>
+      <h1>Ritardi Treni Italia &ndash; Statistiche e Puntualit&agrave;</h1>
+      <div class="subtitle">Dashboard interattiva aggiornata giornalmente</div>
     </div>
     <div class="meta" id="metaBox"></div>
   </header>
