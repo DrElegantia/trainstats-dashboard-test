@@ -808,6 +808,93 @@ function updateArrAliases() {
   state._arrAliases = item ? new Set(item.codes) : new Set([state.filters.arr]);
 }
 
+/**
+ * Build OD pair index: maps each dep item code → Set of reachable arr item codes
+ * and each arr item code → Set of dep item codes that reach it.
+ * Uses the canonical (grouped) codes from buildStationItems.
+ */
+function buildOdPairIndex() {
+  const odRows = state.data.odMonthCat || [];
+  if (!odRows.length) { state._odDepToArr = null; state._odArrToDep = null; return; }
+
+  // Map raw code → canonical item code (the representative from buildStationItems)
+  const rawToDepItem = new Map();
+  for (const it of state._depItems) {
+    for (const c of it.codes) rawToDepItem.set(c, it.code);
+  }
+  const rawToArrItem = new Map();
+  for (const it of state._arrItems) {
+    for (const c of it.codes) rawToArrItem.set(c, it.code);
+  }
+
+  const depToArr = new Map();
+  const arrToDep = new Map();
+  for (const r of odRows) {
+    const dc = rawToDepItem.get(String(r.cod_partenza || "").trim());
+    const ac = rawToArrItem.get(String(r.cod_arrivo || "").trim());
+    if (!dc || !ac) continue;
+    if (!depToArr.has(dc)) depToArr.set(dc, new Set());
+    depToArr.get(dc).add(ac);
+    if (!arrToDep.has(ac)) arrToDep.set(ac, new Set());
+    arrToDep.get(ac).add(dc);
+  }
+  state._odDepToArr = depToArr;
+  state._odArrToDep = arrToDep;
+}
+
+/** Refresh the arrival dropdown to show only stations reachable from current dep. */
+function refreshArrDropdown() {
+  const arrSel = firstEl(["arrSel", "stazioneArrivoSel", "arrStationSel"]);
+  if (!arrSel) return;
+  const searchInput = document.getElementById("arrSearch");
+  const query = searchInput ? searchInput.value : "";
+
+  let items = state._arrItems;
+  if (state.filters.dep !== "all" && state._odDepToArr) {
+    const reachable = state._odDepToArr.get(state.filters.dep);
+    if (reachable) {
+      items = items.filter((it) => reachable.has(it.code));
+    } else {
+      items = [];
+    }
+  }
+  fillStationSelect(arrSel, items, query);
+  if (searchInput) {
+    searchInput.oninput = () => fillStationSelect(arrSel, items, searchInput.value);
+  }
+  // If current selection was filtered out, reset it
+  if (arrSel.value !== state.filters.arr) {
+    state.filters.arr = arrSel.value || "all";
+    updateArrAliases();
+  }
+}
+
+/** Refresh the departure dropdown to show only stations that reach current arr. */
+function refreshDepDropdown() {
+  const depSel = firstEl(["depSel", "stazionePartenzaSel", "depStationSel"]);
+  if (!depSel) return;
+  const searchInput = document.getElementById("depSearch");
+  const query = searchInput ? searchInput.value : "";
+
+  let items = state._depItems;
+  if (state.filters.arr !== "all" && state._odArrToDep) {
+    const sources = state._odArrToDep.get(state.filters.arr);
+    if (sources) {
+      items = items.filter((it) => sources.has(it.code));
+    } else {
+      items = [];
+    }
+  }
+  fillStationSelect(depSel, items, query);
+  if (searchInput) {
+    searchInput.oninput = () => fillStationSelect(depSel, items, searchInput.value);
+  }
+  if (depSel.value !== state.filters.dep) {
+    state.filters.dep = depSel.value || "all";
+    updateDepAliases();
+  }
+}
+
 function initFilters() {
   const yearSel = firstEl(["yearSel", "annoSel", "year"]);
   const catSel = firstEl(["catSel", "categoriaSel", "category"]);
@@ -860,12 +947,15 @@ function initFilters() {
   state._depItems = depItems;
   state._arrItems = arrItems;
 
+  buildOdPairIndex();
+
   if (depSel) {
     fillStationSelect(depSel, depItems, "");
     ensureSearchInput(depSel, "depSearch", "Cerca stazione di partenza", depItems);
     depSel.value = state.filters.dep || "all";
     depSel.onchange = () => {
       state.filters.dep = depSel.value || "all"; updateDepAliases();
+      refreshArrDropdown();
       scheduleFilterPipeline();
     };
   }
@@ -876,6 +966,7 @@ function initFilters() {
     arrSel.value = state.filters.arr || "all";
     arrSel.onchange = () => {
       state.filters.arr = arrSel.value || "all"; updateArrAliases();
+      refreshDepDropdown();
       scheduleFilterPipeline();
     };
   }
@@ -919,8 +1010,12 @@ function initFilters() {
 
       if (yearSel) yearSel.value = defaultYear;
       if (catSel) catSel.value = "all";
-      if (depSel) depSel.value = "all";
-      if (arrSel) arrSel.value = "all";
+      if (depSel) { fillStationSelect(depSel, depItems, ""); depSel.value = "all"; }
+      if (arrSel) { fillStationSelect(arrSel, arrItems, ""); arrSel.value = "all"; }
+      var depSearchInput = document.getElementById("depSearch");
+      var arrSearchInput = document.getElementById("arrSearch");
+      if (depSearchInput) { depSearchInput.value = ""; depSearchInput.oninput = () => fillStationSelect(depSel, depItems, depSearchInput.value); }
+      if (arrSearchInput) { arrSearchInput.value = ""; arrSearchInput.oninput = () => fillStationSelect(arrSel, arrItems, arrSearchInput.value); }
       if (monthFrom) monthFrom.value = "";
       if (monthTo) monthTo.value = "";
 
