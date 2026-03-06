@@ -384,39 +384,6 @@ def _nodo_from_ruolo(ruolo_df: pd.DataFrame, group_cols: List[str]) -> pd.DataFr
     return comb
 
 
-def _make_od_symmetric(od: pd.DataFrame, key_cols: List[str]) -> pd.DataFrame:
-    """Ensure every A→B pair also has a B→A row.
-
-    For pairs that only exist in one direction, create a mirror row by
-    swapping cod_partenza ↔ cod_arrivo.  Pairs that already exist in both
-    directions are left untouched (no duplication).
-    """
-    if od.empty:
-        return od
-
-    # Build a set of existing (group_dims..., A, B) keys
-    group_dims = [c for c in key_cols if c not in ("cod_partenza", "cod_arrivo")]
-    existing = set(zip(*(od[c] for c in group_dims + ["cod_partenza", "cod_arrivo"])))
-
-    # Find rows whose reverse doesn't exist
-    mask = []
-    for _, row in od.iterrows():
-        rev_key = tuple(row[c] for c in group_dims) + (row["cod_arrivo"], row["cod_partenza"])
-        mask.append(rev_key not in existing)
-
-    to_mirror = od[mask].copy()
-    if to_mirror.empty:
-        return od
-
-    # Swap departure ↔ arrival
-    to_mirror["cod_partenza"], to_mirror["cod_arrivo"] = (
-        to_mirror["cod_arrivo"].values.copy(),
-        to_mirror["cod_partenza"].values.copy(),
-    )
-
-    return pd.concat([od, to_mirror], ignore_index=True)
-
-
 def build_gold(cfg: Dict[str, Any], df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
     out: Dict[str, pd.DataFrame] = {}
 
@@ -481,23 +448,13 @@ def build_gold(cfg: Dict[str, Any], df: pd.DataFrame) -> Dict[str, pd.DataFrame]
     # --- OD tables ---
     part_names = df.dropna(subset=["cod_partenza"]).drop_duplicates("cod_partenza").set_index("cod_partenza")["nome_partenza"]
     arr_names = df.dropna(subset=["cod_arrivo"]).drop_duplicates("cod_arrivo").set_index("cod_arrivo")["nome_arrivo"]
-    # Merge both name maps so any code can be looked up regardless of role
-    all_names = pd.concat([part_names, arr_names]).drop_duplicates()
 
     od_m = agg_core(["mese", "categoria", "cod_partenza", "cod_arrivo"], df)
     od_det = agg_core(["mese", "tipo_giorno", "fascia_oraria", "categoria", "cod_partenza", "cod_arrivo"], df)
 
-    # Generate symmetric OD rows: for every A→B also produce B→A.
-    # Many station pairs only have data in one direction (e.g. the data
-    # source records CADORNA→BOVISA but not BOVISA→CADORNA).  Without
-    # the mirror rows the dashboard shows 0 when the user picks the
-    # "missing" direction.
-    od_m = _make_od_symmetric(od_m, ["mese", "categoria", "cod_partenza", "cod_arrivo"])
-    od_det = _make_od_symmetric(od_det, ["mese", "tipo_giorno", "fascia_oraria", "categoria", "cod_partenza", "cod_arrivo"])
-
     for od in (od_m, od_det):
-        od["nome_partenza"] = od["cod_partenza"].map(all_names).fillna("")
-        od["nome_arrivo"] = od["cod_arrivo"].map(all_names).fillna("")
+        od["nome_partenza"] = od["cod_partenza"].map(part_names).fillna("")
+        od["nome_arrivo"] = od["cod_arrivo"].map(arr_names).fillna("")
 
     out["od_mese_categoria"] = od_m
     out["od_dettaglio_categoria"] = od_det
