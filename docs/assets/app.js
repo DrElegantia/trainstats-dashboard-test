@@ -330,6 +330,21 @@ function normalizeText(s) {
   return base.replace(/[\u0300-\u036f]/g, "");
 }
 
+/** Normalize station name for grouping codes that refer to the same station.
+ *  Handles Trenord/FerrovieNord vs RFI naming differences. */
+function normalizeStationName(s) {
+  var t = String(s || "").toUpperCase().trim().replace(/\s+/g, " ");
+  // Expand "M N" abbreviation (Trenord: Milano Nord)
+  t = t.replace(/^M N\b/, "MILANO NORD");
+  // Strip " FNM" suffix (FerrovieNord Milano)
+  t = t.replace(/\s+FNM$/, "");
+  // Strip " POLITECNICO" suffix
+  t = t.replace(/\s+POLITECNICO$/, "");
+  // Strip "NORD" after known city prefixes (Trenord convention)
+  t = t.replace(/\b(MILANO|COMO|VARESE)\s+NORD\b/, "$1");
+  return t.replace(/\s+/g, " ").trim();
+}
+
 function yearFromMonth(mese) { return String(mese || "").slice(0, 4); }
 
 function firstEl(ids) {
@@ -446,16 +461,18 @@ function buildStationItems(codes) {
   const byName = new Map();
   for (const code of (codes || [])) {
     const name = stationName(code, code);
-    const key = normalizeText(name);
+    const key = normalizeText(normalizeStationName(name));
     if (!byName.has(key)) {
       byName.set(key, { code, name, codes: [code] });
     } else {
       const entry = byName.get(key);
       entry.codes.push(code);
-      // prefer a code that has coordinates
+      // prefer a code that has coordinates, and prefer S-codes (official RFI)
       const curCoords = stationCoords(entry.code);
       const newCoords = stationCoords(code);
-      if (!curCoords && newCoords) {
+      const curIsS = String(entry.code).startsWith("S");
+      const newIsS = String(code).startsWith("S");
+      if ((!curCoords && newCoords) || (!curIsS && newIsS)) {
         entry.code = code;
         entry.name = name;
       }
@@ -513,10 +530,11 @@ function enrichStationsRefFromFacts() {
   }
 
   // Build a name→coords lookup from existing stationsRef entries
+  // Use normalizeStationName to handle Trenord/RFI naming differences
   const nameToCoords = new Map();
   for (const [, ref] of state.stationsRef) {
     if (!ref.name) continue;
-    const key = normalizeText(ref.name);
+    const key = normalizeText(normalizeStationName(ref.name));
     if (!key) continue;
     if (Number.isFinite(ref.lat) && Number.isFinite(ref.lon) && !nameToCoords.has(key)) {
       nameToCoords.set(key, { lat: ref.lat, lon: ref.lon, city: ref.city || "" });
@@ -527,7 +545,7 @@ function enrichStationsRefFromFacts() {
   let enriched = 0;
   for (const [code, name] of codeNamePairs) {
     if (state.stationsRef.has(code)) continue;
-    const key = normalizeText(name);
+    const key = normalizeText(normalizeStationName(name));
     const coords = nameToCoords.get(key);
     state.stationsRef.set(code, {
       code,
@@ -546,7 +564,7 @@ function enrichStationsRefFromFacts() {
 function buildNameToCodesMap() {
   const map = new Map();
   for (const [code, ref] of state.stationsRef) {
-    const key = normalizeText(ref.name || code);
+    const key = normalizeText(normalizeStationName(ref.name || code));
     if (!map.has(key)) map.set(key, []);
     map.get(key).push(code);
   }
