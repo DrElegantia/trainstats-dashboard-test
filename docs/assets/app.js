@@ -636,6 +636,20 @@ function passArr(r) {
   return aliases ? aliases.has(code) : false;
 }
 
+/** Bidirectional OD filter: match rows where (dep→arr) OR (arr→dep) */
+function passOdBidirectional(r) {
+  const dep = String(r.cod_partenza || "").trim();
+  const arr = String(r.cod_arrivo || "").trim();
+  const dA = state._depAliases, aA = state._arrAliases;
+  const depMatch = dA ? dA.has(dep) : dep === state.filters.dep;
+  const arrMatch = aA ? aA.has(arr) : arr === state.filters.arr;
+  if (depMatch && arrMatch) return true;
+  // reverse direction
+  const depMatchRev = dA ? dA.has(arr) : arr === state.filters.dep;
+  const arrMatchRev = aA ? aA.has(dep) : dep === state.filters.arr;
+  return depMatchRev && arrMatchRev;
+}
+
 function passYear(r, field) {
   if (state.filters.year === "all") return true;
   return String(r[field] || "").slice(0, 4) === state.filters.year;
@@ -1084,8 +1098,13 @@ function _computeKpiRows() {
   if (useDetail) rows = applyDetailDimFilter(rows);
 
   if (stationFiltered) {
-    if (state.filters.dep !== "all") rows = rows.filter(passDep);
-    if (state.filters.arr !== "all") rows = rows.filter(passArr);
+    if (state.filters.dep !== "all" && state.filters.arr !== "all") {
+      rows = rows.filter(passOdBidirectional);
+    } else if (state.filters.dep !== "all") {
+      rows = rows.filter(passDep);
+    } else {
+      rows = rows.filter(passArr);
+    }
   }
   return rows;
 }
@@ -1152,8 +1171,13 @@ function _computeSeriesRows() {
   if (useDetail) rows = applyDetailDimFilter(rows);
 
   if (stationFiltered) {
-    if (state.filters.dep !== "all") rows = rows.filter(passDep);
-    if (state.filters.arr !== "all") rows = rows.filter(passArr);
+    if (state.filters.dep !== "all" && state.filters.arr !== "all") {
+      rows = rows.filter(passOdBidirectional);
+    } else if (state.filters.dep !== "all") {
+      rows = rows.filter(passDep);
+    } else {
+      rows = rows.filter(passArr);
+    }
   }
 
   return rows;
@@ -1264,7 +1288,19 @@ function renderHist() {
   if (stationFiltered) {
     const dep = state.filters.dep;
     const arr = state.filters.arr;
-    if (arr !== "all") {
+    if (dep !== "all" && arr !== "all") {
+      // Bidirectional: match either direction
+      const dA = state._depAliases, aA = state._arrAliases;
+      rows = rows.filter((r) => {
+        const code = String(r.cod_stazione || "").trim();
+        const ruolo = String(r.ruolo || "").trim();
+        const matchesDep = dA ? dA.has(code) : code === dep;
+        const matchesArr = aA ? aA.has(code) : code === arr;
+        if (ruolo === "arrivo" && (matchesArr || matchesDep)) return true;
+        if (ruolo === "partenza" && (matchesDep || matchesArr)) return true;
+        return false;
+      });
+    } else if (arr !== "all") {
       const aliases = state._arrAliases;
       rows = rows.filter((r) => {
         const code = String(r.cod_stazione || "").trim();
