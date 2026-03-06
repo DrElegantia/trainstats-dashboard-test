@@ -135,10 +135,35 @@ def write_json(path: str, obj: Dict[str, Any]) -> None:
 
 
 def normalize_station_name(x: Any) -> str:
+    """Normalize station name for matching across different naming conventions.
+
+    Handles Trenord/FerrovieNord vs RFI naming differences:
+      - "M N CADORNA" -> "MILANO CADORNA"
+      - "COMO NORD CAMERLATA" -> "COMO CAMERLATA"
+      - "MILANO BOVISA FNM" -> "MILANO BOVISA"
+      - "MILANO BOVISA POLITECNICO" -> "MILANO BOVISA"
+    """
     if x is None:
         return ""
     s = str(x).strip().upper()
     s = re.sub(r"\s+", " ", s)
+
+    # Expand "M N" abbreviation (Trenord: Milano Nord)
+    s = re.sub(r"^M N\b", "MILANO NORD", s)
+
+    # Strip " FNM" suffix (FerrovieNord Milano)
+    s = re.sub(r"\s+FNM$", "", s)
+
+    # Strip " POLITECNICO" suffix (same physical station)
+    s = re.sub(r"\s+POLITECNICO$", "", s)
+
+    # Strip "NORD" after known city prefixes (Trenord convention)
+    # e.g. "MILANO NORD CADORNA" -> "MILANO CADORNA"
+    #      "COMO NORD LAGO" -> "COMO LAGO"
+    #      "VARESE NORD" -> "VARESE"
+    s = re.sub(r"\b(MILANO|COMO|VARESE)\s+NORD\b", r"\1", s)
+
+    s = re.sub(r"\s+", " ", s).strip()
     return s
 
 
