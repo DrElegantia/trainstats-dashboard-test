@@ -895,6 +895,45 @@ function refreshDepDropdown() {
   }
 }
 
+/** Rebuild station dropdown items and OD index after OD data becomes available. */
+function rebuildStationDropdowns() {
+  const deps = uniq([
+    ...(state.data.odMonthCat || []).map((r) => r.cod_partenza),
+    ...(state.data.odDetailCat || []).map((r) => r.cod_partenza)
+  ].filter(Boolean));
+  const arrs = uniq([
+    ...(state.data.odMonthCat || []).map((r) => r.cod_arrivo),
+    ...(state.data.odDetailCat || []).map((r) => r.cod_arrivo)
+  ].filter(Boolean));
+
+  state._depItems = buildStationItems(deps);
+  state._arrItems = buildStationItems(arrs);
+  buildOdPairIndex();
+
+  // Re-fill both dropdowns with the real OD-based items
+  const depSel = firstEl(["depSel", "stazionePartenzaSel", "depStationSel"]);
+  const arrSel = firstEl(["arrSel", "stazioneArrivoSel", "arrStationSel"]);
+  if (depSel) {
+    const q = (document.getElementById("depSearch") || {}).value || "";
+    fillStationSelect(depSel, state._depItems, q);
+    depSel.value = state.filters.dep || "all";
+    if (document.getElementById("depSearch")) {
+      document.getElementById("depSearch").oninput = () => fillStationSelect(depSel, state._depItems, document.getElementById("depSearch").value);
+    }
+  }
+  if (arrSel) {
+    const q = (document.getElementById("arrSearch") || {}).value || "";
+    fillStationSelect(arrSel, state._arrItems, q);
+    arrSel.value = state.filters.arr || "all";
+    if (document.getElementById("arrSearch")) {
+      document.getElementById("arrSearch").oninput = () => fillStationSelect(arrSel, state._arrItems, document.getElementById("arrSearch").value);
+    }
+  }
+  // Apply cascading filter if a station is already selected
+  if (state.filters.dep !== "all") refreshArrDropdown();
+  if (state.filters.arr !== "all") refreshDepDropdown();
+}
+
 function initFilters() {
   const yearSel = firstEl(["yearSel", "annoSel", "year"]);
   const catSel = firstEl(["catSel", "categoriaSel", "category"]);
@@ -1690,7 +1729,11 @@ async function ensureStationsData() {
 }
 
 async function ensureOdData() {
+  const wasEmpty = !state.data.odMonthCat || !state.data.odMonthCat.length;
   await lazyLoadCSV("od_mese_categoria.csv", "odMonthCat");
+  if (wasEmpty && state.data.odMonthCat && state.data.odMonthCat.length) {
+    rebuildStationDropdowns();
+  }
 }
 
 async function ensureOdDetailData() {
